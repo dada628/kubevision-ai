@@ -1,0 +1,401 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   KubeVision AI - Deep Space Cyber-Ops Theme Foundation
+   Layer order: tokens -> base reset -> components -> utilities
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* Deep space surface ramp (mirrors tailwind void.* tokens). */
+    --kv-void-950: 2 6 23;
+    --kv-void-900: 4 10 26;
+    --kv-void-850: 7 15 34;
+    --kv-void-800: 11 20 40;
+
+    /* Telemetry state streams. */
+    --kv-healthy: 52 211 153;
+    --kv-elevated: 251 191 36;
+    --kv-critical: 244 63 94;
+    --kv-degraded: 251 146 60;
+    --kv-idle: 100 116 139;
+
+    /* Theme stream-light (流光). */
+    --kv-accent: 34 211 238;
+    --kv-accent-soft: 103 232 249;
+
+    /* Legacy-safe telemetry hook used by canvas bridge. */
+    --kv-telemetry-healthy: #34d399;
+    --kv-telemetry-elevated: #fbbf24;
+    --kv-telemetry-critical: #f43f5e;
+    --kv-telemetry-idle: #64748b;
+
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: rgb(30 41 59 / 1); /* slate-800 default border */
+  }
+
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    min-height: 100%;
+    overflow-x: hidden;
+    background-color: rgb(var(--kv-void-950));
+    color: rgb(241 245 249); /* slate-100 */
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Disable the browser focus ring in favour of the cyan HUD ring below. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--kv-accent) / 0.75);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: rgb(var(--kv-accent) / 0.3);
+    color: rgb(236 254 255);
+  }
+
+  /* Numeric readouts (CPU %, pod counts, latency) must not jitter. */
+  .tabular-nums,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+}
+
+/* ============================================================================
+   Custom thin scrollbars - dark rail, cyan-to-slate thumb, no hard white flash
+   ========================================================================== */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(51 65 85 / 0.9) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgb(2 6 23 / 0.55);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+      180deg,
+      rgb(8 145 178 / 0.55),
+      rgb(51 65 85 / 0.85)
+    );
+    border-radius: 9999px;
+    border: 1px solid rgb(2 6 23 / 0.9);
+    transition: background-color 160ms ease-out;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+      180deg,
+      rgb(var(--kv-accent) / 0.9),
+      rgb(8 145 178 / 0.85)
+    );
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Opt-out helper for canvases and HUD panes that must stay chrome-free. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  /*---------------------------------------------------------------------------
+    HUD panel - the canonical glass surface for every dashboard widget.
+    Usage: <section class="kv-panel"> ... </section>
+  ---------------------------------------------------------------------------*/
+  .kv-panel {
+    position: relative;
+    border-radius: 0.75rem;
+    border: 1px solid rgb(30 41 59 / 1);
+    background-color: rgb(15 23 42 / 0.75);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow:
+      inset 0 1px 0 0 rgb(148 163 184 / 0.06),
+      0 24px 48px -32px rgb(2 6 23 / 0.9);
+  }
+
+  .kv-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgb(30 41 59 / 1);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgb(148 163 184);
+  }
+
+  /*---------------------------------------------------------------------------
+    Status pills - map 1:1 onto telemetry states.
+  ---------------------------------------------------------------------------*/
+  .kv-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    border-width: 1px;
+    padding: 0.125rem 0.5rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .kv-status-healthy {
+    border-color: rgb(52 211 153 / 0.35);
+    background-color: rgb(52 211 153 / 0.1);
+    color: rgb(52 211 153);
+  }
+
+  .kv-status-elevated {
+    border-color: rgb(251 191 36 / 0.35);
+    background-color: rgb(251 191 36 / 0.1);
+    color: rgb(251 191 36);
+  }
+
+  .kv-status-critical {
+    border-color: rgb(244 63 94 / 0.4);
+    background-color: rgb(244 63 94 / 0.12);
+    color: rgb(244 63 94);
+  }
+
+  .kv-status-idle {
+    border-color: rgb(100 116 139 / 0.35);
+    background-color: rgb(100 116 139 / 0.1);
+    color: rgb(148 163 184);
+  }
+
+  /*---------------------------------------------------------------------------
+    Hairline rule with a cyan fade - used between HUD sections.
+  ---------------------------------------------------------------------------*/
+  .kv-rule {
+    height: 1px;
+    width: 100%;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(34 211 238 / 0.35),
+      transparent
+    );
+  }
+}
+
+@layer utilities {
+  /*---------------------------------------------------------------------------
+    .bg-cyber-grid - faint cyan translucent gradient grid.
+    Two orthogonally offset linear-gradients produce the 1px grid; the radial
+    vignette fades the grid out toward the viewport edges so the 3D scene stays
+    the focal point.
+  ---------------------------------------------------------------------------*/
+  .bg-cyber-grid {
+    background-color: rgb(var(--kv-void-950));
+    background-image:
+      linear-gradient(
+        to right,
+        rgb(var(--kv-accent) / 0.07) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        rgb(var(--kv-accent) / 0.07) 1px,
+        transparent 1px
+      ),
+      radial-gradient(
+        ellipse 80% 60% at 50% 0%,
+        rgb(var(--kv-accent) / 0.06),
+        transparent 70%
+      );
+    background-size:
+      48px 48px,
+      48px 48px,
+      100% 100%;
+    background-position:
+      center center,
+      center center,
+      center top;
+    background-repeat: repeat, repeat, no-repeat;
+  }
+
+  /* Same grid, doubled density - for compact HUD cards. */
+  .bg-cyber-grid-fine {
+    background-color: rgb(var(--kv-void-950));
+    background-image:
+      linear-gradient(
+        to right,
+        rgb(var(--kv-accent) / 0.05) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        rgb(var(--kv-accent) / 0.05) 1px,
+        transparent 1px
+      );
+    background-size: 20px 20px;
+    background-position: center center;
+  }
+
+  /* Dot-matrix variant for dense topology legends. */
+  .bg-cyber-dots {
+    background-color: rgb(var(--kv-void-950));
+    background-image: radial-gradient(
+      rgb(var(--kv-accent) / 0.16) 1px,
+      transparent 1px
+    );
+    background-size: 18px 18px;
+    background-position: center center;
+  }
+
+  /* Radial void bloom used behind the R3F canvas. */
+  .bg-void-bloom {
+    background-image:
+      radial-gradient(
+        circle at 50% 0%,
+        rgb(var(--kv-accent) / 0.1),
+        transparent 55%
+      ),
+      radial-gradient(
+        circle at 85% 15%,
+        rgb(59 130 246 / 0.08),
+        transparent 50%
+      ),
+      radial-gradient(
+        circle at 10% 85%,
+        rgb(16 185 129 / 0.06),
+        transparent 55%
+      );
+  }
+
+  /* Crisp hairline grid overlay that sits above content. */
+  .kv-grid-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(
+        to right,
+        rgb(148 163 184 / 0.045) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        rgb(148 163 184 / 0.045) 1px,
+        transparent 1px
+      );
+    background-size: 64px 64px;
+    mask-image: radial-gradient(
+      ellipse 70% 60% at 50% 40%,
+      black 30%,
+      transparent 100%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 70% 60% at 50% 40%,
+      black 30%,
+      transparent 100%
+    );
+  }
+
+  /* Animated scan line for active-alert panels. */
+  .kv-scan-line::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 12%;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--kv-accent) / 0.12),
+      transparent
+    );
+    animation: scan-line 6s linear infinite;
+  }
+
+  /* Glowing text helpers - keep contrast >= 4.5:1 on void surfaces. */
+  .text-glow-cyan {
+    text-shadow: 0 0 12px rgb(var(--kv-accent) / 0.55);
+  }
+
+  .text-glow-emerald {
+    text-shadow: 0 0 12px rgb(var(--kv-healthy) / 0.55);
+  }
+
+  .text-glow-rose {
+    text-shadow: 0 0 12px rgb(var(--kv-critical) / 0.6);
+  }
+
+  /* Mask that fades scrolled content into the panel edge. */
+  .kv-fade-bottom {
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      black 70%,
+      transparent 100%
+    );
+  }
+
+  /* GPU-friendly compositing hint for the floating HUD cards. */
+  .kv-layer {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+  }
+}
+
+/* ============================================================================
+   Motion & accessibility guards
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Hide the Next.js dev indicator overlay so it never pollutes the HUD. */
+nextjs-portal {
+  display: none;
+}
