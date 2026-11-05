@@ -135,6 +135,14 @@ export interface ClusterSummary {
   readonly abnormalPodCount: number;
   readonly totalPodCount: number;
   readonly runningPodCount: number;
+  /**
+   * Per-status tallies for the TopBar filter chips.
+   *
+   * A `Record<PodStatus, number>` rather than five scalar fields: the chip row
+   * iterates a fixed tuple of statuses, so adding a `PodStatus` later only
+   * requires updating that tuple, not every call site.
+   */
+  readonly podStatusCounts: Readonly<Record<PodStatus, number>>;
   /** Unresolved alerts in the latest snapshot. */
   readonly activeAlertCount: number;
   readonly totalQps: number;
@@ -152,13 +160,24 @@ export interface ClusterSummary {
 
 /**
  * Fixed set of log channels so the terminal renderer can colour lines without
- * parsing free-form text. `KUBE-CONTROLLER` is the green "action succeeded"
- * channel required by the generative UI self-heal flow.
+ * parsing free-form text.
+ *
+ * Two families coexist on purpose:
+ * - Pipeline channels emitted by the stores (`KUBE-CONTROLLER`, `CHAOS`,
+ *   `COPILOT`, `TELEMETRY`, `SYSTEM`).
+ * - Legacy / external prefixes that already appear in kubectl-style output and
+ *   in worker messages (`WARN`, `ERR`, `AI-COPILOT`, `EDGE-WASM`). Supporting
+ *   them means a log line copied out of `kubectl logs` still colourises
+ *   correctly instead of falling back to neutral grey.
  */
 export const TERMINAL_LOG_CHANNELS = [
   'KUBE-CONTROLLER',
   'CHAOS',
   'COPILOT',
+  'AI-COPILOT',
+  'EDGE-WASM',
+  'WARN',
+  'ERR',
   'TELEMETRY',
   'SYSTEM',
 ] as const;
@@ -170,6 +189,7 @@ export type TerminalLogTone =
   | 'elevated'
   | 'critical'
   | 'accent'
+  | 'violet'
   | 'neutral';
 
 /** Channel -> HUD colour tone. Controller successes are emerald. */
@@ -178,8 +198,12 @@ export const TERMINAL_LOG_CHANNEL_TONE: Record<
   TerminalLogTone
 > = {
   'KUBE-CONTROLLER': 'healthy',
-  CHAOS: 'elevated',
+  CHAOS: 'critical',
   COPILOT: 'accent',
+  'AI-COPILOT': 'accent',
+  'EDGE-WASM': 'violet',
+  WARN: 'elevated',
+  ERR: 'critical',
   TELEMETRY: 'neutral',
   SYSTEM: 'neutral',
 };

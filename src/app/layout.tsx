@@ -52,7 +52,7 @@ export const metadata: Metadata = {
     description: siteDescription,
   },
   icons: {
-    icon: '/favicon.ico',
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
   },
 };
 
@@ -71,9 +71,13 @@ export default function RootLayout({
   children,
 }: RootLayoutProps): ReactElement {
   return (
-    <html lang="zh-CN" className="dark h-full" suppressHydrationWarning>
-      <body className="h-full min-h-screen bg-slate-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-50">
-        <div className="relative flex min-h-screen flex-col bg-slate-950 text-slate-100 antialiased">
+    <html lang="zh-CN" className="dark h-full overflow-hidden" suppressHydrationWarning>
+      {/* `overflow-hidden` on both html and body is what makes the shell's
+          100dvh lock actually hold: without it, any 1px overshoot in a child
+          pane produces a document scrollbar and the fixed 65/35 split starts
+          drifting. Per-pane scrolling is opted into individually. */}
+      <body className="h-full overflow-hidden bg-slate-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-50">
+        <div className="relative flex h-full flex-col overflow-hidden bg-slate-950 text-slate-100 antialiased">
           {children}
         </div>
       </body>

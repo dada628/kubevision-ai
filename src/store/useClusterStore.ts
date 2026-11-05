@@ -89,24 +89,45 @@ const BOOT_TIMESTAMP = '15:00:00';
  */
 function buildInitialSummary(): ClusterSummary {
   const seed = INITIAL_CLUSTER_SNAPSHOT;
+  const podStatusCounts = countPodStatuses(seed.pods);
+  const runningPodCount = podStatusCounts.Running;
   const totalPodCount = seed.pods.length;
-  let runningPodCount = 0;
-  for (const pod of seed.pods) {
-    if (pod.status === 'Running') {
-      runningPodCount += 1;
-    }
-  }
   return {
     healthScore: seed.clusterHealthScore,
     abnormalPodCount: totalPodCount - runningPodCount,
     totalPodCount,
     runningPodCount,
+    podStatusCounts,
     activeAlertCount: seed.activeAlerts.filter((alert) => !alert.resolved).length,
     totalQps: seed.totalQps,
     fps: 60,
     lastSyncAt: seed.timestamp,
     selectedEntity: null,
   };
+}
+
+/**
+ * Tallies pods per status.
+ *
+ * Always returns all five keys (zero-filled) so consumers can index the record
+ * without a null check - `noUncheckedIndexedAccess` is on, and a
+ * `Record<PodStatus, number>` with guaranteed keys keeps the chip row total-free
+ * of `?? 0` noise.
+ */
+function countPodStatuses(
+  pods: readonly { readonly status: PodStatus }[],
+): Record<PodStatus, number> {
+  const counts: Record<PodStatus, number> = {
+    Running: 0,
+    Pending: 0,
+    CrashLoopBackOff: 0,
+    OOMKilled: 0,
+    Terminating: 0,
+  };
+  for (const pod of pods) {
+    counts[pod.status] += 1;
+  }
+  return counts;
 }
 
 /**
@@ -118,12 +139,8 @@ function buildInitialSummary(): ClusterSummary {
 function readSummary(selectedEntityId: string | null): ClusterSummary {
   const live = getSnapshot();
 
-  let runningPodCount = 0;
-  for (const pod of live.pods) {
-    if (pod.status === 'Running') {
-      runningPodCount += 1;
-    }
-  }
+  const podStatusCounts = countPodStatuses(live.pods);
+  const runningPodCount = podStatusCounts.Running;
 
   let activeAlertCount = 0;
   for (const alert of live.activeAlerts) {
@@ -139,6 +156,7 @@ function readSummary(selectedEntityId: string | null): ClusterSummary {
     abnormalPodCount: live.pods.length - runningPodCount,
     totalPodCount: live.pods.length,
     runningPodCount,
+    podStatusCounts,
     activeAlertCount,
     totalQps: live.totalQps,
     fps: telemetryTransientRef.currentFps,
@@ -296,6 +314,8 @@ export interface ClusterStoreState {
 
   /* ----------------------------- panels ------------------------------ */
   isPerfHudOpen: boolean;
+  /** Terminal echo collapsed to an 8px-tall status strip. */
+  isTerminalCollapsed: boolean;
 
   /* -------------------------- terminal log --------------------------- */
   terminalLogs: string[];
@@ -325,6 +345,10 @@ export interface ClusterStoreState {
   setChaosModalOpen: (open: boolean) => void;
   /** Open/close the performance HUD. */
   setPerfHudOpen: (open: boolean) => void;
+  /** Collapse/expand the bottom terminal echo. */
+  setTerminalCollapsed: (collapsed: boolean) => void;
+  /** Flip the terminal between collapsed and expanded. */
+  toggleTerminalCollapsed: () => void;
   /** Set the pod status filter chip. */
   setStatusFilter: (filter: PodStatusFilter) => void;
   /**
@@ -369,6 +393,7 @@ const initialState = {
   isChaosModalOpen: false,
   statusFilter: 'ALL' as PodStatusFilter,
   isPerfHudOpen: false,
+  isTerminalCollapsed: false,
   terminalLogs: [
     formatChannelLogLine(
       'SYSTEM',
@@ -467,6 +492,11 @@ export const useClusterStore = create<ClusterStoreState>((set, get) => ({
   /* -------------------------------- panels ------------------------------- */
 
   setPerfHudOpen: (open) => set({ isPerfHudOpen: open }),
+
+  setTerminalCollapsed: (collapsed) => set({ isTerminalCollapsed: collapsed }),
+
+  toggleTerminalCollapsed: () =>
+    set((state) => ({ isTerminalCollapsed: !state.isTerminalCollapsed })),
 
   /* ------------------------------- healing ------------------------------- */
 
@@ -614,6 +644,16 @@ export function useStatusFilter(): PodStatusFilter {
 /** Performance HUD visibility. */
 export function usePerfHudOpen(): boolean {
   return useClusterStore((state) => state.isPerfHudOpen);
+}
+
+/** Terminal echo collapsed state. */
+export function useTerminalCollapsed(): boolean {
+  return useClusterStore((state) => state.isTerminalCollapsed);
+}
+
+/** Throttled telemetry summary (1 Hz). */
+export function useClusterSummary(): ClusterSummary {
+  return useClusterStore((state) => state.summary);
 }
 
 /** Chaos modal visibility. */

@@ -38,3 +38,13 @@ yarn-error.log*
 # transformers.js / onnx caches
 /.cache/
 /public/models/
+
+# local dev / debug artifacts
+.devlog.txt
+.devlogerr.txt
+/.edgeprofile*/
+/.cdpprofile*/
+/.cdpcheck/
+/.cdpdiag/
+.shot-*.png
+.tmp_*
