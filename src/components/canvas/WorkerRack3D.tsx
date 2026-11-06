@@ -56,7 +56,10 @@ import type {
 import type { RackIndex, WorkerNodeEntity } from '@/types/cluster';
 import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot } from '@/store/useTelemetryRef';
+import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
+  POD_SLOT_BASE_Y,
+  POD_TRAY_PITCH,
   RACK_DEPTH,
   RACK_HEIGHT,
   RACK_TRAY_COUNT,
@@ -93,13 +96,16 @@ const TRAY_THICKNESS = 0.3;
  * floor: with a fixed 1.0 base and 0.64 pitch the top tray landed at y=2.92
  * inside a 5.2-tall chassis, leaving the upper 44% as empty armour and making
  * the rack read as half-populated.
+ *
+ * These MUST equal `POD_SLOT_BASE_Y` / `POD_TRAY_PITCH` in `topologyLayout`:
+ * `PodInstancedMesh` stands its containers on these exact shelves, so a drift
+ * between the two files would leave the pods hovering between trays.
  */
-const TRAY_BASE_Y = 0.95;
-const TRAY_TOP_Y = RACK_HEIGHT - 0.95;
+const TRAY_BASE_Y = POD_SLOT_BASE_Y;
+const TRAY_TOP_Y = RACK_HEIGHT - POD_SLOT_BASE_Y;
 
 /** Vertical pitch between tray centres, derived from the span above. */
-const TRAY_PITCH =
-  (TRAY_TOP_Y - TRAY_BASE_Y) / Math.max(1, RACK_TRAY_COUNT - 1);
+const TRAY_PITCH = POD_TRAY_PITCH;
 
 /** Neon light-pipe radius, and the Z where it is mounted (just proud of the face). */
 const RAIL_RADIUS = 0.045;
@@ -345,19 +351,16 @@ export function WorkerRack3D({ rackIndex }: WorkerRack3DProps): ReactElement {
 
   const handleOver = useCallback(() => {
     hoverCountRef.current += 1;
-    if (typeof document !== 'undefined') {
-      document.body.style.cursor = 'pointer';
-    }
+    acquirePointerCursor();
   }, []);
 
   const handleOut = useCallback(() => {
     if (hoverCountRef.current > 0) {
       hoverCountRef.current -= 1;
-    }
-    /* Only release the cursor once no part of this rack is hovered, otherwise
-       stepping off the plinth onto the chassis would clear it mid-hover. */
-    if (hoverCountRef.current === 0 && typeof document !== 'undefined') {
-      document.body.style.cursor = 'auto';
+      /* Only release once no part of this rack is hovered, otherwise stepping off
+         the plinth onto the chassis would clear the cursor mid-hover. The shared
+         stack also makes this order-independent against the pod cells in front. */
+      releasePointerCursor();
     }
   }, []);
 

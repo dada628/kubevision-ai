@@ -86,26 +86,63 @@ export const RACK_TRAY_COUNT = 4;
    Pod slot dimensions
    ========================================================================== */
 
-/** Pod slots per rack column. */
-export const POD_SLOT_COLUMNS = 3;
+/**
+ * Pod grid ON each tray shelf: 2 columns (local X) x 2 depth rows (local Z).
+ *
+ * WHY 2x2 LIES FLAT
+ * A tray is a HORIZONTAL shelf, so its four containers sit side by side on one
+ * plane: two across the front-opening and two deep. Stacking them vertically
+ * would drive the upper pair through the slab above. 4 trays x 4 = 16 slots per
+ * rack, 48 cluster-wide.
+ */
+export const POD_SLOTS_PER_ROW = 2;
 
-/** Pod slots per rack row. */
-export const POD_SLOT_ROWS = 4;
+/** Pod slots per tray shelf (a 2x2 quad). */
+export const POD_SLOTS_PER_TRAY = 4;
 
-/** Total pod slots inside one rack (3 x 4 = 12; the busiest rack hosts 9). */
-export const POD_SLOT_COUNT = POD_SLOT_COLUMNS * POD_SLOT_ROWS;
+/** Total pod slots inside one rack: 4 trays x 2x2 = 16. */
+export const POD_SLOT_COUNT = RACK_TRAY_COUNT * POD_SLOTS_PER_TRAY;
 
-/** Horizontal gap between two pod slot centres. */
-export const POD_SLOT_GAP_X = 0.78;
+/** Total addressable pod slots across the three racks (16 x 3 = 48). */
+export const POD_SLOT_COUNT_CLUSTER = POD_SLOT_COUNT * 3;
 
-/** Vertical gap between two pod slot centres. */
-export const POD_SLOT_GAP_Y = 1.02;
+/** Pod cube edge length, in world units. Chosen to read at the overview pose. */
+export const POD_CUBE_SIZE = 0.44;
 
-/** Y of the lowest pod row. */
-export const POD_SLOT_BASE_Y = 1.15;
+/** Horizontal gap between the two slot centres on a tray (local X). */
+export const POD_SLOT_GAP_X = 0.9;
 
-/** Z of the pod mounting plane, in RACK-LOCAL space. */
-export const POD_SLOT_Z = RACK_DEPTH / 2 + 0.14;
+/** Depth gap between the two slot rows on a tray (local Z). */
+export const POD_SLOT_GAP_Z = 0.66;
+
+/** X of the tray stack centre. Racks are symmetric, so this is 0. */
+export const POD_SLOT_BASE_X = 0;
+
+/** Z of the tray stack centre, in rack-local space. */
+export const POD_SLOT_BASE_Z = 0;
+
+/**
+ * Y of the LOWEST tray's shelf plane, matching `TRAY_BASE_Y` in `WorkerRack3D`.
+ * Pods are placed relative to the shelves the chassis already draws, so a pod
+ * can never float above the top tray or sink into the plinth.
+ */
+export const POD_SLOT_BASE_Y = 0.95;
+
+/** Half the tray slab thickness: pods rest on the shelf's TOP surface. */
+const POD_TRAY_HALF_THICKNESS = 0.15;
+
+/** Small air gap so a pod never z-fights the shelf it stands on. */
+const POD_SLOT_LIFT = 0.012;
+
+/**
+ * Vertical pitch between tray centres, matching `TRAY_PITCH` in `WorkerRack3D`
+ * (`(RACK_HEIGHT - 1.9) / (RACK_TRAY_COUNT - 1)` = 1.1). Duplicated as a
+ * derived constant rather than imported so `topologyLayout` stays free of
+ * component imports - the two MUST agree, and both are anchored to
+ * `RACK_HEIGHT`.
+ */
+export const POD_TRAY_PITCH =
+  (RACK_HEIGHT - POD_SLOT_BASE_Y * 2) / Math.max(1, RACK_TRAY_COUNT - 1);
 
 /* ==========================================================================
    Derived helpers
@@ -155,6 +192,73 @@ export function writeRackOrigin(
 }
 
 /**
+ * Decomposes a slot index into its grid cell.
+ *
+ * SLOT INDEX ORDER - tray-major, then depth row, then column
+ * `slotIndex = tray * 4 + row * 2 + column`. Indices 0..3 fill the lowest tray
+ * (front-left, front-right, back-left, back-right), 4..7 the second tray, and so
+ * on. Tray-major ordering means the scheduler fills a rack from the bottom up,
+ * which is how an operator reads a rack in the physical world.
+ *
+ * @returns grid coordinates clamped into the legal range, so an out-of-range
+ *          index (a node that ended up with more pods than slots) degrades to the
+ *          last slot instead of writing NaN into an instance matrix.
+ */
+export function podSlotGrid(slotIndex: number): {
+  tray: number;
+  row: number;
+  column: number;
+} {
+  const slot =
+    !Number.isFinite(slotIndex) || slotIndex < 0
+      ? 0
+      : Math.min(Math.trunc(slotIndex), POD_SLOT_COUNT - 1);
+  const tray = Math.floor(slot / POD_SLOTS_PER_TRAY);
+  const withinTray = slot % POD_SLOTS_PER_TRAY;
+  return {
+    tray,
+    row: Math.floor(withinTray / POD_SLOTS_PER_ROW),
+    column: withinTray % POD_SLOTS_PER_ROW,
+  };
+}
+
+/**
+ * Writes one pod slot into `out`, in RACK-LOCAL space.
+ *
+ * LOCAL SPACE IS THE POINT
+ * The instanced pod field renders each rack's pods through a single
+ * `InstancedMesh` parented to that rack's group. Working in rack-local
+ * coordinates means the rack's yaw is applied ONCE by its parent transform
+ * instead of being re-derived per instance per frame - and it keeps the pod
+ * layout correct if a rack's angle ever changes.
+ *
+ * GEOMETRY
+ * - X: the two columns straddle the tray centre.
+ * - Y: the cube's CENTRE sits half a cube above the shelf SURFACE, so pods rest
+ *   ON the shelf instead of being bisected by the slab.
+ * - Z: the two depth rows sit in front of / behind the tray centre. +Z is the
+ *   chassis front, so row 0 is the front-most container an operator can read.
+ */
+export function writePodSlotLocal(
+  slotIndex: number,
+  out: Vector3,
+): Vector3 {
+  const { tray, row, column } = podSlotGrid(slotIndex);
+  const localX =
+    POD_SLOT_BASE_X + (column - (POD_SLOTS_PER_ROW - 1) / 2) * POD_SLOT_GAP_X;
+  const shelfY =
+    POD_SLOT_BASE_Y +
+    POD_TRAY_HALF_THICKNESS +
+    tray * POD_TRAY_PITCH +
+    POD_CUBE_SIZE / 2 +
+    POD_SLOT_LIFT;
+  /* Row 0 = front (+Z), row 1 = behind it. */
+  const localZ =
+    POD_SLOT_BASE_Z + (row - (POD_SLOTS_PER_ROW - 1) / 2) * POD_SLOT_GAP_Z;
+  return out.set(localX, shelfY, localZ);
+}
+
+/**
  * World position of one pod slot (the pod cube's centre) into `out`.
  *
  * The slot is laid out in RACK-LOCAL space (columns along local X, the pod plane
@@ -167,25 +271,18 @@ export function writePodSlotPosition(
   slotIndex: number,
   out: Vector3,
 ): Vector3 {
-  const slot =
-    !Number.isFinite(slotIndex) || slotIndex < 0
-      ? 0
-      : Math.min(Math.trunc(slotIndex), POD_SLOT_COUNT - 1);
-  const column = slot % POD_SLOT_COLUMNS;
-  const row = Math.floor(slot / POD_SLOT_COLUMNS);
-
-  const localX = (column - (POD_SLOT_COLUMNS - 1) / 2) * POD_SLOT_GAP_X;
-  const localY = POD_SLOT_BASE_Y + row * POD_SLOT_GAP_Y;
-  const localZ = POD_SLOT_Z;
+  writePodSlotLocal(slotIndex, out);
 
   const angle = rackAngle(rackIndex);
   const yaw = rackFacingYaw(rackIndex);
   const cosYaw = Math.cos(yaw);
   const sinYaw = Math.sin(yaw);
+  const localX = out.x;
+  const localZ = out.z;
 
   return out.set(
     Math.cos(angle) * RACK_ORBIT_RADIUS + localX * cosYaw + localZ * sinYaw,
-    localY,
+    out.y,
     Math.sin(angle) * RACK_ORBIT_RADIUS - localX * sinYaw + localZ * cosYaw,
   );
 }

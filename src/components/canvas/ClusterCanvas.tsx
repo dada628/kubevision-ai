@@ -30,6 +30,7 @@ import { noteFrame } from '@/store/useTelemetryRef';
 import { useClusterStore } from '@/store/useClusterStore';
 import CameraRig, { OVERVIEW_CAMERA_POSITION } from './CameraRig';
 import MasterNode3D from './MasterNode3D';
+import { PodInstancedField } from './PodInstancedMesh';
 import { WorkerRackField } from './WorkerRack3D';
 
 /* ==========================================================================
@@ -246,6 +247,7 @@ function ClusterScene(): ReactElement {
       <CameraRig />
       <MasterNode3D />
       <WorkerRackField />
+      <PodInstancedField />
     </>
   );
 }

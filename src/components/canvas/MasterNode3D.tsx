@@ -37,6 +37,7 @@ import { Color, InstancedMesh, Matrix4, Object3D as Object3DRef } from 'three';
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot } from '@/store/useTelemetryRef';
+import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
   MASTER_POSITION_Y,
 } from './topologyLayout';
@@ -239,16 +240,12 @@ export function MasterNode3D(): ReactElement {
 
   const handleOver = useCallback(() => {
     hoveredRef.current = true;
-    if (typeof document !== 'undefined') {
-      document.body.style.cursor = 'pointer';
-    }
+    acquirePointerCursor();
   }, []);
 
   const handleOut = useCallback(() => {
     hoveredRef.current = false;
-    if (typeof document !== 'undefined') {
-      document.body.style.cursor = 'auto';
-    }
+    releasePointerCursor();
   }, []);
 
   /* --------------------------------------------------------- frame loop */
