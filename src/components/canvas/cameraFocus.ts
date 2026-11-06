@@ -76,11 +76,11 @@ export function resolveFocusPose(
     targetType ?? inferEntityTypeFromSnapshot(targetId, snapshot);
 
   if (resolvedType === 'master') {
-    if (snapshot.master.id === targetId) {
-      writeMasterFocusPose(outPosition, outTarget);
-      return;
-    }
-    writeOverviewPose(outPosition, outTarget);
+    /* The caller already TOLD us this id is the control plane, so a strict
+       `master.id === targetId` check would strand the camera on the overview for
+       any alias (`'master-control-plane'`, a bookmark, a model tool payload).
+       The master is a singleton, so the type alone is sufficient proof. */
+    writeMasterFocusPose(outPosition, outTarget);
     return;
   }
 

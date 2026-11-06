@@ -6,9 +6,10 @@
  * SCOPE OF THIS MILESTONE
  * This file owns the WebGL *stage*: renderer configuration, atmosphere (fog,
  * lights, twin grids, drifting sparkles), the camera rig, and the frame clock
- * that feeds `noteFrame`. The topology meshes (instanced pod field, rack chassis,
- * control-plane beacon, link beams) mount through `TopologyStage` and inherit
- * camera framing, fog and colour grading from here.
+ * that feeds `noteFrame`. The topology meshes mount through the procedural
+ * model components: `MasterNode3D` for the control plane and `WorkerRackField`
+ * (three `WorkerRack3D` instances on the polar orbit) for the compute racks.
+ * Both inherit camera framing, fog and colour grading from here.
  *
  * WHY `frameloop="always"` IS SAFE
  * The canvas renders continuously because the atmosphere (sparkle drift, fog
@@ -28,7 +29,8 @@ import { DoubleSide } from 'three';
 import { noteFrame } from '@/store/useTelemetryRef';
 import { useClusterStore } from '@/store/useClusterStore';
 import CameraRig, { OVERVIEW_CAMERA_POSITION } from './CameraRig';
-import TopologyStage from './TopologyStage';
+import MasterNode3D from './MasterNode3D';
+import { WorkerRackField } from './WorkerRack3D';
 
 /* ==========================================================================
    Palette - mirrors tailwind's `telemetry.*` and `void.*` tokens
@@ -227,6 +229,12 @@ function FrameClock(): null {
  * Kept separate from `ClusterCanvas` so the `<Canvas>` element's own props stay
  * module-level constants: R3F recreates the renderer when `gl` or `camera`
  * change identity, which would drop the WebGL context on a parent re-render.
+ *
+ * TOPOLOGY MOUNT
+ * The master stands on the origin and the three worker racks orbit it on a ring
+ * of radius 9.5 (`topologyLayout`), each facing the centre. Both models are fully
+ * procedural - no `.glb` assets - and read their live numbers from the transient
+ * telemetry pool inside `useFrame`.
  */
 function ClusterScene(): ReactElement {
   return (
@@ -236,7 +244,8 @@ function ClusterScene(): ReactElement {
       <GroundGrid />
       <VoidSparkles />
       <CameraRig />
-      <TopologyStage />
+      <MasterNode3D />
+      <WorkerRackField />
     </>
   );
 }

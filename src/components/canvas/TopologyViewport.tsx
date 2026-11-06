@@ -51,7 +51,7 @@ interface LegendEntry {
   readonly className: string;
 }
 
-/** Status tones must match the chassis rim colours in `TopologyStage`. */
+/** Status tones must match the load ramp in `loadPalette` (emerald/amber/rose). */
 const LEGEND: readonly LegendEntry[] = [
   { label: 'ready', className: 'bg-cyan-400' },
   { label: 'high load', className: 'bg-amber-400' },
