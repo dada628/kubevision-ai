@@ -42,6 +42,10 @@ yarn-error.log*
 # local dev / debug artifacts
 .devlog.txt
 .devlogerr.txt
+.next-dev*.log
+/.cdp/
+/.crop-*.png
+/.shot-*.png
 /.edgeprofile*/
 /.cdpprofile*/
 /.cdpcheck/
