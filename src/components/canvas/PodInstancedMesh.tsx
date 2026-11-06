@@ -62,6 +62,10 @@ import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot } from '@/store/useTelemetryRef';
 import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
+  HTML_OVERLAY_CONTENT_STYLE,
+  HTML_OVERLAY_WRAPPER_CLASS,
+} from './htmlOverlay';
+import {
   POD_CUBE_SIZE,
   POD_SLOT_COUNT,
   rackFacingYaw,
@@ -793,12 +797,24 @@ export function PodInstancedMesh({
           center
           distanceFactor={18}
           pointerEvents="none"
+          wrapperClass={HTML_OVERLAY_WRAPPER_CLASS}
           zIndexRange={[40, 0]}
         >
+          {/*
+            `wrapperClass` + inline `pointerEvents` are load-bearing, not
+            belt-and-braces: drei's non-`transform` Html drops the `pointerEvents`
+            prop, so without them this tooltip is hit-testable. Mounted directly over
+            the hovered cell, it would swallow the `pointermove` stream that keeps it
+            alive - the label would latch on and never clear. See `htmlOverlay.ts`.
+          */}
           <div
             ref={tooltipBoxRef}
             className="select-none whitespace-nowrap rounded border bg-slate-950/92 px-2 py-1 text-center backdrop-blur-md"
-            style={{ borderColor: '#22d3ee', color: '#22d3ee' }}
+            style={{
+              ...HTML_OVERLAY_CONTENT_STYLE,
+              borderColor: '#22d3ee',
+              color: '#22d3ee',
+            }}
           >
             <span
               ref={tooltipNameRef}

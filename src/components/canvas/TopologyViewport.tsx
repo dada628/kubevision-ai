@@ -23,8 +23,9 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, type ReactElement } from 'react';
-import { Maximize2, MousePointerClick, Radar } from 'lucide-react';
+import { Maximize2 } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { NodeInspectHUD } from '@/components/hud/NodeInspectHUD';
 import CanvasSkeleton from './CanvasSkeleton';
 import CameraControls from './CameraControls';
 import { requestPreset } from './cameraCommandBus';
@@ -41,23 +42,6 @@ const ClusterCanvas = dynamic(() => import('./ClusterCanvas'), {
   ssr: false,
   loading: () => <CanvasSkeleton />,
 });
-
-/* ==========================================================================
-   Legend
-   ========================================================================== */
-
-interface LegendEntry {
-  readonly label: string;
-  readonly className: string;
-}
-
-/** Status tones must match the load ramp in `loadPalette` (emerald/amber/rose). */
-const LEGEND: readonly LegendEntry[] = [
-  { label: 'ready', className: 'bg-cyan-400' },
-  { label: 'high load', className: 'bg-amber-400' },
-  { label: 'partition', className: 'bg-rose-500' },
-  { label: 'control plane', className: 'bg-emerald-400' },
-];
 
 /* ==========================================================================
    TopologyViewport
@@ -90,35 +74,18 @@ export function TopologyViewport(): ReactElement {
         <ClusterCanvas />
       </div>
 
-      {/* ------------------------------------------------------- legend (TL) */}
-      <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-2">
-        <div className="rounded-lg border border-slate-800/80 bg-slate-900/70 px-2.5 py-2 backdrop-blur-md">
-          <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-ultra-wide text-slate-500">
-            <Radar className="h-3 w-3 text-cyan-400" aria-hidden />
-            topology
-          </p>
-          <ul className="space-y-1">
-            {LEGEND.map((entry) => (
-              <li
-                key={entry.label}
-                className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-slate-400"
-              >
-                <span
-                  className={cn('h-1.5 w-1.5 rounded-full', entry.className)}
-                  aria-hidden
-                />
-                {entry.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      {/* --------------------------- inspection HUD (TL) --------------------- */}
+      {/* The HUD owns the top-left corner: it shows the legend when nothing is
+          selected and grows into the entity probe card when something is. */}
+      <NodeInspectHUD />
 
       {/* --------------------------------------------------- controls (TR) */}
-      <div className="absolute right-3 top-3 flex items-center gap-1.5">
+      {/* The wrapper is `pointer-events-none` so the gap between the badge and the
+          button stays transparent to orbit gestures; only the button opts in. */}
+      <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5">
         <span
           className={cn(
-            'pointer-events-none rounded border px-1.5 py-1 font-mono text-[9px] uppercase tracking-widest backdrop-blur-md',
+            'rounded border px-1.5 py-1 font-mono text-[9px] uppercase tracking-widest backdrop-blur-md',
             selectedEntityId === null
               ? 'border-slate-800/80 bg-slate-900/70 text-slate-600'
               : 'border-cyan-500/40 bg-cyan-500/10 text-cyan-400',
@@ -131,7 +98,7 @@ export function TopologyViewport(): ReactElement {
           onClick={handleReset}
           title="Fly back to the overview framing"
           aria-label="Reset camera to the overview framing"
-          className="flex items-center gap-1.5 rounded border border-slate-700 bg-slate-900/80 px-2 py-1 font-mono text-[9px] uppercase tracking-widest text-slate-400 backdrop-blur-md transition-colors duration-150 hover:border-cyan-500/50 hover:text-cyan-400"
+          className="pointer-events-auto flex items-center gap-1.5 rounded border border-slate-700 bg-slate-900/80 px-2 py-1 font-mono text-[9px] uppercase tracking-widest text-slate-400 backdrop-blur-md transition-colors duration-150 hover:border-cyan-500/50 hover:text-cyan-400"
         >
           <Maximize2 className="h-3 w-3" aria-hidden />
           reset view
@@ -139,14 +106,10 @@ export function TopologyViewport(): ReactElement {
       </div>
 
       {/* ---------------------------------- camera control bar (bottom-right) */}
-      <div className="absolute bottom-3 right-3">
+      {/* Same rule: the positioning box must not capture pointer events. Its only
+          child is the toolbar, which opts back in itself. */}
+      <div className="pointer-events-none absolute bottom-3 right-3">
         <CameraControls />
-      </div>
-
-      {/* ----------------------------------------------------- hint (BL) */}
-      <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded border border-slate-800/60 bg-slate-950/70 px-2 py-1 font-mono text-[9px] uppercase tracking-widest text-slate-600 backdrop-blur-md">
-        <MousePointerClick className="h-3 w-3 text-slate-500" aria-hidden />
-        click a rack or the beacon to focus · drag to orbit · wheel to dolly
       </div>
 
       {/* Corner brackets: frames the scene like an ops console viewport. */}

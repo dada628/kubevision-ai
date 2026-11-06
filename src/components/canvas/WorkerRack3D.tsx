@@ -58,6 +58,10 @@ import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot } from '@/store/useTelemetryRef';
 import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
+  HTML_OVERLAY_CONTENT_STYLE,
+  HTML_OVERLAY_WRAPPER_CLASS,
+} from './htmlOverlay';
+import {
   POD_SLOT_BASE_Y,
   POD_TRAY_PITCH,
   RACK_DEPTH,
@@ -718,17 +722,29 @@ export function WorkerRack3D({ rackIndex }: WorkerRack3DProps): ReactElement {
       </mesh>
 
       {/* -------------------------------------------- holographic nameplate */}
+      {/*
+        `pointerEvents="none"` alone is NOT enough: drei's non-`transform` Html
+        drops the prop and its container stays hit-testable. `wrapperClass` reaches
+        that container and the inline style covers the content root - without both,
+        this plate steals clicks from the chassis and pod cells behind it.
+      */}
       <Html
         position={[0, PLATE_OFFSET_Y, 0]}
         center
         distanceFactor={22}
         pointerEvents="none"
+        wrapperClass={HTML_OVERLAY_WRAPPER_CLASS}
         zIndexRange={[30, 0]}
       >
         <div
           ref={plateRef}
           className="select-none whitespace-nowrap rounded border bg-slate-950/90 px-2.5 py-1 text-center backdrop-blur-md"
-          style={{ borderColor: '#22d3ee', color: '#22d3ee', opacity: 0.97 }}
+          style={{
+            ...HTML_OVERLAY_CONTENT_STYLE,
+            borderColor: '#22d3ee',
+            color: '#22d3ee',
+            opacity: 0.97,
+          }}
         >
           <span
             ref={plateNameRef}

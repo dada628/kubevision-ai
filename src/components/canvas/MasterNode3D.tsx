@@ -39,6 +39,10 @@ import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot } from '@/store/useTelemetryRef';
 import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
+  HTML_OVERLAY_CONTENT_STYLE,
+  HTML_OVERLAY_WRAPPER_CLASS,
+} from './htmlOverlay';
+import {
   MASTER_POSITION_Y,
 } from './topologyLayout';
 
@@ -405,11 +409,20 @@ export function MasterNode3D(): ReactElement {
         center
         distanceFactor={15}
         pointerEvents="none"
+        wrapperClass={HTML_OVERLAY_WRAPPER_CLASS}
         zIndexRange={[30, 0]}
       >
+        {/*
+          `style.pointerEvents` plus `wrapperClass` ARE NOT REDUNDANT.
+          drei's non-`transform` Html drops the `pointerEvents` prop and renders a
+          single container that stays `pointer-events:auto`, so the plate becomes a
+          DOM hit target over the beacon behind it. `wrapperClass` reaches that
+          container; the inline style covers the content root. See `htmlOverlay.ts`.
+        */}
         <div
           className="select-none whitespace-nowrap rounded-md border border-emerald-400/40 bg-slate-950/85 px-5 py-2.5 text-center backdrop-blur-md"
           style={{
+            ...HTML_OVERLAY_CONTENT_STYLE,
             boxShadow:
               '0 0 0 1px rgba(52,211,153,0.16), 0 0 18px -4px rgba(52,211,153,0.5)',
           }}
