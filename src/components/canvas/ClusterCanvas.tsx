@@ -29,7 +29,9 @@ import { DoubleSide } from 'three';
 import { noteFrame } from '@/store/useTelemetryRef';
 import { useClusterStore } from '@/store/useClusterStore';
 import CameraRig, { OVERVIEW_CAMERA_POSITION } from './CameraRig';
+import { ErrorRippleField } from './ErrorRippleRing';
 import MasterNode3D from './MasterNode3D';
+import { NetworkStream3D } from './NetworkStream3D';
 import { PodInstancedField } from './PodInstancedMesh';
 import { WorkerRackField } from './WorkerRack3D';
 
@@ -248,6 +250,12 @@ function ClusterScene(): ReactElement {
       <MasterNode3D />
       <WorkerRackField />
       <PodInstancedField />
+      {/* Fault rings are floor decals at y = 0.02, so they never occlude the
+          chassis standing on them. */}
+      <ErrorRippleField />
+      {/* Traffic arches last: they are the only element spanning the whole
+          cluster, and mounting them after the hardware keeps the intent obvious. */}
+      <NetworkStream3D />
     </>
   );
 }

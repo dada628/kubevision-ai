@@ -335,6 +335,19 @@ export const telemetryTransientRef: TelemetryTransientRef = {
   nodeIndex: new Map<string, number>(),
 };
 
+/**
+ * Fills the id->index maps and the Float32 targets from the seed snapshot.
+ *
+ * WHY THIS RUNS AT MODULE LOAD
+ * `refreshTargets()` only executes after a `writeSnapshot` / `applyChaos` tick.
+ * Before the first tick the index maps are empty, so every `getNodeFloatIndex` /
+ * `getPodFloatIndex` returns -1 and every consumer falls back to zero - the network
+ * streams then crawl at their idle floor and the pod cells report 0% CPU until the
+ * first telemetry tick lands. Seeding here makes the very first painted frame as
+ * truthful as the tenth.
+ */
+refreshTargets();
+
 /* ==========================================================================
    Read accessors (allocation-free)
    ========================================================================== */
