@@ -33,6 +33,9 @@ import {
   isHealActionType,
   isPodStatusFilter,
   isTerminalLogChannel,
+  CHAOS_SCENARIO_META,
+  CHAOS_TARGET_RACK,
+  RACK_WORKER_LABEL,
   TERMINAL_LOG_CHANNEL_TONE,
 } from '@/types/store';
 import type {
@@ -281,6 +284,31 @@ function currentClockLabel(): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+/**
+ * The operator-facing `[CHAOS-MESH]` broadcast for one drill injection.
+ *
+ * Names the victim explicitly. A bare "Fault scenario injected" line is useless in
+ * a list of twenty terminal lines: the operator needs to know WHICH chassis is
+ * about to start burning, and the terminal is the only place that survives after
+ * the modal closes.
+ *
+ * The reset case is worded as a recovery rather than as an injected experiment,
+ * because broadcasting "injected: NONE" would be actively misleading in an audit
+ * trail.
+ */
+function describeChaosBroadcast(scenario: ChaosScenario): string {
+  if (scenario === 'NONE') {
+    return 'Fault scenario injected: NONE - all experiments recovered, cluster reset to health baseline';
+  }
+
+  const rack = CHAOS_TARGET_RACK[scenario];
+  const target = rack === null ? 'cluster' : RACK_WORKER_LABEL[rack];
+  const meta = CHAOS_SCENARIO_META.find((entry) => entry.scenario === scenario);
+  const label = meta === undefined ? scenario : meta.label;
+
+  return `Fault scenario injected: ${scenario} (${label}) -> target ${target}`;
+}
+
 /** Appends lines, trimming from the head to respect the retention cap. */
 function appendLines(
   existing: readonly string[],
@@ -466,12 +494,26 @@ export const useClusterStore = create<ClusterStoreState>((set, get) => ({
     applyChaos(scenario);
     const wasReset = scenario === 'NONE';
     set({ activeChaos: scenario, isChaosModalOpen: false });
+
+    /* Two lines, on purpose:
+       1. the CHAOS channel is the pipeline receipt ("we applied this to the live
+          snapshot"), which is what the existing demo surface already emits;
+       2. CHAOS-MESH is the OPERATOR-FACING broadcast for the drill control, in the
+          exact shape Chaos Mesh itself reports an injected experiment. Keeping
+          both means the drill is auditable without losing the machine receipt. */
     get().appendTerminalLog(
       formatChannelLogLine(
         'CHAOS',
         wasReset
           ? 'chaos reset: all injected faults cleared, cluster returning to steady state'
           : `chaos injected: ${scenario} applied to live snapshot`,
+        currentClockLabel(),
+      ),
+    );
+    get().appendTerminalLog(
+      formatChannelLogLine(
+        'CHAOS-MESH',
+        describeChaosBroadcast(scenario),
         currentClockLabel(),
       ),
     );

@@ -53,9 +53,11 @@ import {
   noteRigCameraMode,
   onAutoRotateChange,
   onCameraPreset,
+  onRackFocusRequest,
 } from './cameraCommandBus';
 import {
   writeOverviewPose,
+  writeRackFocusPose,
   writeTopPose,
 } from './topologyLayout';
 
@@ -243,6 +245,23 @@ export function CameraRig(): ReactElement {
       instance.autoRotate = enabled && !flyingRef.current;
     });
   }, []);
+
+  /**
+   * Chaos drill: frame the rack that was just hit.
+   *
+   * This writes the GOAL only - it never touches the selection, so the drill does
+   * not open the inspector card for a rack the operator did not click, and the
+   * camera does not "un-select" anything on the way in. The pose comes from
+   * `writeRackFocusPose`, the same function a rack click resolves to, so the
+   * framing is identical whether the operator got there by clicking or by
+   * injecting a fault.
+   */
+  useEffect(() => {
+    return onRackFocusRequest((rackIndex) => {
+      writeRackFocusPose(rackIndex, scratch.goalPosition, scratch.goalTarget);
+      flyingRef.current = true;
+    });
+  }, [scratch]);
 
   /* Pointer / wheel input always wins over the automatic flight. */
   const handleControlStart = useCallback(() => {

@@ -27,6 +27,8 @@
  * React, so the DOM overlay can use it without pulling WebGL into its bundle.
  */
 
+import type { RackIndex } from '@/types/cluster';
+
 /* ==========================================================================
    Presets
    ========================================================================== */
@@ -178,6 +180,46 @@ export function toggleAutoRotate(): boolean {
   const next = !snapshot.autoRotate;
   setAutoRotate(next);
   return next;
+}
+
+/* ==========================================================================
+   Chaos drill camera request
+   ========================================================================== */
+
+/** Handlers that frame a specific rack after a chaos injection. */
+const drillListeners = new Set<(rack: RackIndex) => void>();
+
+/**
+ * Requests an eased flight to a rack, WITHOUT changing the selection.
+ *
+ * WHY THIS IS NOT `requestPreset` OR `selectEntity`
+ * A chaos injection is not a selection: it must not open the inspector probe, and
+ * it must not clear itself when the operator clicks empty space. It is also not a
+ * preset, because presets are fixed framings while this one depends on which rack
+ * the drill hit. A separate channel keeps all three concerns from being conflated
+ * into one command that means "aim the camera somewhere, for some reason".
+ *
+ * The rig consumes this by resolving the rack's own focus pose, so the framing is
+ * identical to the one the operator gets by clicking that rack.
+ */
+export function requestRackFocus(rack: RackIndex): void {
+  for (const listener of drillListeners) {
+    listener(rack);
+  }
+}
+
+/**
+ * Registers the rig's drill handler. Called once by `CameraRig`.
+ *
+ * @returns an unsubscribe function.
+ */
+export function onRackFocusRequest(
+  listener: (rack: RackIndex) => void,
+): () => void {
+  drillListeners.add(listener);
+  return () => {
+    drillListeners.delete(listener);
+  };
 }
 
 /**

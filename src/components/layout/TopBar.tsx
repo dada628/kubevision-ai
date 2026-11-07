@@ -8,12 +8,18 @@ import {
   Github,
   Gauge,
   ShieldAlert,
+  Siren,
+  X,
   Zap,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { PodStatus } from '@/types/cluster';
-import { CHAOS_SCENARIOS } from '@/types/cluster';
-import type { PodStatusFilter } from '@/types/store';
+import type { ChaosScenarioMeta, PodStatusFilter } from '@/types/store';
+import {
+  CHAOS_SCENARIO_META,
+  CHAOS_TARGET_RACK,
+  RACK_WORKER_LABEL,
+} from '@/types/store';
 import {
   useActiveChaos,
   useClusterStore,
@@ -62,9 +68,6 @@ const CHIP_TONE: Record<PodStatusFilter, string> = {
   OOMKilled: 'border-rose-500/40 text-rose-400',
   Terminating: 'border-slate-500/40 text-slate-400',
 };
-
-/** Chaos rotation: one click advances the scenario, the last step resets. */
-const CHAOS_ROTATION = CHAOS_SCENARIOS;
 
 /* ==========================================================================
    Health semantics
@@ -297,6 +300,114 @@ function ModeSwitch({ mode, onToggle }: ModeSwitchProps): ReactElement {
 }
 
 /* ==========================================================================
+   Chaos status banner
+   ========================================================================== */
+
+/** Resolves the human label + victim rack for an active drill. */
+function chaosBannerTitle(activeChaos: Exclude<ChaosScenarioMeta['scenario'], 'NONE'>): string {
+  const meta = CHAOS_SCENARIO_META.find((entry) => entry.scenario === activeChaos);
+  return meta === undefined ? activeChaos : meta.label;
+}
+
+interface ChaosBannerProps {
+  /** Sprint-free: null when no drill is active, so the banner never renders empty. */
+  readonly activeChaos: ChaosScenarioMeta['scenario'] | null;
+  readonly onTerminate: () => void;
+}
+
+/**
+ * The live drill banner.
+ *
+ * WHY IT IS A BANNER AND NOT PART OF THE CHAOS BUTTON
+ * The button already turns rose when a fault is active, but it sits in the
+ * actions cluster at the far right and its label is the raw SCENARIO ID
+ * (`NODE_CPU_SPIKE`), which is not what an operator scanning the top bar needs to
+ * read. This component states the condition in words - "CHAOS ACTIVE: Node CPU
+ * Spike" - names the victim rack, and puts the STOP control right next to it, so
+ * ending a drill never requires reopening the modal.
+ *
+ * WHY THE COLOUR IS DRIVEN BY THE SCENARIO TONE
+ * `CHAOS_SCENARIO_META.tone` already classifies severity (`critical` for OOM and
+ * partition, `elevated` for the CPU spike). Reusing it means the banner and the
+ * drill cards can never disagree about how bad a scenario is, and a future
+ * scenario only needs its metadata filled in to get the right colour here.
+ */
+function ChaosBanner({ activeChaos, onTerminate }: ChaosBannerProps): ReactElement | null {
+  if (activeChaos === null || activeChaos === 'NONE') {
+    return null;
+  }
+
+  const meta = CHAOS_SCENARIO_META.find((entry) => entry.scenario === activeChaos);
+  const tone = meta?.tone ?? 'critical';
+  const label = chaosBannerTitle(activeChaos);
+  const rack = CHAOS_TARGET_RACK[activeChaos];
+  const victim = rack === null ? 'cluster-wide' : RACK_WORKER_LABEL[rack];
+
+  /* Amber for capacity drills, rose for damage drills. Both keep the pulse: the
+     banner's job is to be noticed, and a static rose pill in a mostly-slate bar
+     stops being seen within a minute. */
+  const isCritical = tone === 'critical';
+
+  return (
+    <div
+      /* `role="status"` + `aria-live="assertive"`: a drill becoming active is a
+         state change a screen-reader operator must hear immediately, not on their
+         next tab stop. The label is announced, not the decorative icon. */
+      role="status"
+      aria-live="assertive"
+      className={cn(
+        'flex h-8 max-w-[min(22rem,42vw)] shrink-0 items-center gap-1.5 rounded-full border pl-2.5 pr-1 font-mono text-[10px] uppercase tracking-widest',
+        isCritical
+          ? 'border-rose-500/60 bg-rose-500/15 text-rose-300 shadow-glow-rose'
+          : 'border-amber-500/60 bg-amber-500/15 text-amber-300 shadow-glow-amber',
+        /* Pulse the BORDER+surface, not the text: dimming the label would fight
+           the very legibility the banner exists for. */
+        'animate-pulse-glow',
+      )}
+      title={`Chaos drill active: ${activeChaos} -> ${victim}`}
+    >
+      <Siren className="h-3 w-3 shrink-0" aria-hidden />
+
+      <span className="shrink-0 font-semibold">
+        chaos active:
+      </span>
+
+      {/* The scenario label is the only part allowed to truncate: on a narrow bar
+          the banner must give way before the actions cluster does. */}
+      <span className="min-w-0 truncate text-slate-100" title={label}>
+        {label}
+      </span>
+
+      {/* Victim rack, hidden first when space is tight - it is context, not the
+          headline. */}
+      <span
+        className={cn(
+          'hidden shrink-0 sm:inline',
+          isCritical ? 'text-rose-400/80' : 'text-amber-400/80',
+        )}
+      >
+        · {victim}
+      </span>
+
+      <button
+        type="button"
+        onClick={onTerminate}
+        aria-label={`Terminate chaos drill ${activeChaos}`}
+        title="Terminate the drill and restore the cluster to steady state"
+        className={cn(
+          'ml-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full transition-colors duration-150',
+          isCritical
+            ? 'text-rose-300/70 hover:bg-rose-500/25 hover:text-rose-200'
+            : 'text-amber-300/70 hover:bg-amber-500/25 hover:text-amber-200',
+        )}
+      >
+        <X className="h-3 w-3" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+/* ==========================================================================
    TopBar
    ========================================================================== */
 
@@ -317,8 +428,8 @@ export function TopBar(): ReactElement {
 
   const toggleConnectionMode = useClusterStore((state) => state.toggleConnectionMode);
   const setStatusFilter = useClusterStore((state) => state.setStatusFilter);
-  const triggerChaos = useClusterStore((state) => state.triggerChaos);
   const setChaosModalOpen = useClusterStore((state) => state.setChaosModalOpen);
+  const triggerChaos = useClusterStore((state) => state.triggerChaos);
   const togglePerfHud = useClusterStore((state) => state.setPerfHudOpen);
 
   const health = presentHealth(summary.healthScore);
@@ -354,17 +465,31 @@ export function TopBar(): ReactElement {
   }, [togglePerfHud]);
 
   /**
-   * Chaos button: advances the scenario rotation, wrapping to `NONE` so the
-   * demo can always be reset with the same control. Also opens the modal so the
-   * operator can pick a specific scenario instead of cycling.
+   * Chaos button: opens the drill modal.
+   *
+   * It used to silently rotate the scenario on every click (`Inject Chaos` ->
+   * next fault), which made the button a one-way slot machine: the operator had to
+   * cycle through faults they did not want to reach the one they did, and the
+   * blast radius was never shown. The modal makes the choice explicit - four named
+   * drills with their victim rack - so this button is now purely "open the drill
+   * console". A fault is only injected when a card is picked.
    */
   const handleInjectChaos = useCallback(() => {
-    const currentIndex = CHAOS_ROTATION.indexOf(activeChaos);
-    const nextIndex = (currentIndex + 1) % CHAOS_ROTATION.length;
-    const next = CHAOS_ROTATION[nextIndex] ?? 'NONE';
-    triggerChaos(next);
     setChaosModalOpen(true);
-  }, [activeChaos, triggerChaos, setChaosModalOpen]);
+  }, [setChaosModalOpen]);
+
+  /**
+   * Terminates the active drill from the banner.
+   *
+   * Routed through `triggerChaos('NONE')` rather than `set({ activeChaos })`, so
+   * terminating has exactly the same side effects as picking the recovery card:
+   * the live pool is healed, the summary re-syncs, and a `[CHAOS-MESH]` recovery
+   * broadcast lands in the terminal. A bare store write would leave the 3D scene
+   * with OOM-killed pods and no audit line saying who stopped the drill.
+   */
+  const handleTerminateChaos = useCallback(() => {
+    triggerChaos('NONE');
+  }, [triggerChaos]);
 
   const chaosActive = activeChaos !== 'NONE';
 
@@ -460,6 +585,17 @@ export function TopBar(): ReactElement {
 
       {/* ------------------------------- right ------------------------------ */}
       <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+        {/*
+          CHAOS BANNER - mounted FIRST in the actions cluster so it sits between
+          the status readouts and the controls, which is where an operator's
+          attention lands after glancing at health. It renders nothing when no
+          drill is active, so the idle bar is unchanged.
+        */}
+        <ChaosBanner
+          activeChaos={chaosActive ? activeChaos : null}
+          onTerminate={handleTerminateChaos}
+        />
+
         {/* QPS stays visible on narrow screens where the middle zone is hidden. */}
         <div className="lg:hidden">
           <QpsReadout qps={summary.totalQps} />
@@ -472,13 +608,13 @@ export function TopBar(): ReactElement {
           onClick={handleInjectChaos}
           aria-label={
             chaosActive
-              ? `Chaos active: ${activeChaos}. Click to advance the scenario.`
-              : 'Inject a chaos fault into the demo cluster'
+              ? `Chaos drill active: ${activeChaos}. Open the drill console.`
+              : 'Open the chaos drill console'
           }
           title={
             chaosActive
-              ? `Active fault: ${activeChaos} - click to advance`
-              : 'Inject a chaos fault into the demo cluster'
+              ? `Active fault: ${activeChaos} - open the drill console to change it`
+              : 'Open the chaos drill console'
           }
           className={cn(
             'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-widest transition-all duration-150',

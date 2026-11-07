@@ -3,6 +3,7 @@
 import type { ReactElement } from 'react';
 import { ShellLayout } from './ShellLayout';
 import { TopologyViewport } from '@/components/canvas/TopologyViewport';
+import { ChaosControlModal } from '@/components/hud/ChaosControlModal';
 import { useHudSync } from '@/hooks/useHudSync';
 import { useTelemetryStream } from '@/hooks/useTelemetryStream';
 
@@ -33,7 +34,20 @@ export function DashboardShell(): ReactElement {
   useHudSync();
   useTelemetryStream();
 
-  return <ShellLayout viewportSlot={<TopologyViewport />} />;
+  return (
+    <>
+      <ShellLayout viewportSlot={<TopologyViewport />} />
+      {/*
+        The chaos drill modal is a SIBLING of the shell, not a child of the
+        viewport or the top bar. It is `position: fixed` and needs to cover the
+        whole window (including the header), so nesting it inside either region
+        would put it at the mercy of that region's `overflow-hidden` and stacking
+        context. Mounting it here also means the per-viewport components stay
+        ignorant of it and cannot open a second copy.
+      */}
+      <ChaosControlModal />
+    </>
+  );
 }
 
 export default DashboardShell;

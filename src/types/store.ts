@@ -15,6 +15,7 @@ import type {
   Percentage,
   PodEntity,
   PodStatus,
+  RackIndex,
   WorkerNodeEntity,
 } from './cluster';
 
@@ -173,6 +174,7 @@ export interface ClusterSummary {
 export const TERMINAL_LOG_CHANNELS = [
   'KUBE-CONTROLLER',
   'CHAOS',
+  'CHAOS-MESH',
   'COPILOT',
   'AI-COPILOT',
   'EDGE-WASM',
@@ -199,6 +201,9 @@ export const TERMINAL_LOG_CHANNEL_TONE: Record<
 > = {
   'KUBE-CONTROLLER': 'healthy',
   CHAOS: 'critical',
+  /* Chaos Mesh broadcasts are the drill-injection channel: rose, so an injected
+     fault is distinguishable at a glance from the copilot's cyan narration. */
+  'CHAOS-MESH': 'critical',
   COPILOT: 'accent',
   'AI-COPILOT': 'accent',
   'EDGE-WASM': 'violet',
@@ -227,6 +232,43 @@ export function isTerminalLogChannel(
     (TERMINAL_LOG_CHANNELS as readonly string[]).includes(value)
   );
 }
+
+/* ==========================================================================
+   Chaos drill metadata
+   ========================================================================== */
+
+/**
+ * Which rack each chaos scenario damages, or null when it damages none.
+ *
+ * THIS IS THE SINGLE SOURCE FOR "WHERE DID WE HIT IT?"
+ * Three consumers need the same answer and must never disagree: the drill modal
+ * (which rack to highlight on its card), the camera rig (which rack to fly to on
+ * injection) and the terminal broadcast (which chassis to name). Deriving it in
+ * one place means a scenario that is re-targeted in the engine cannot leave the
+ * camera flying to the wrong rack.
+ *
+ * The values mirror `syntheticEngine.ts`'s `*_RACK` constants, which is the other
+ * half of the same contract:
+ *   POD_OOM_SWARM   -> rack 1 (worker-beta)   (per the engine header)
+ *   NODE_CPU_SPIKE  -> rack 0 (worker-alpha)  (per the engine header)
+ *   NET_PACKET_LOSS -> rack 2 (worker-gamma)  (per the engine header)
+ *
+ * `'NONE'` is null because a recovery has no blast radius: flying the camera to a
+ * rack to show it healing would imply that rack was the only one affected.
+ */
+export const CHAOS_TARGET_RACK: Readonly<Record<ChaosScenario, RackIndex | null>> = {
+  NONE: null,
+  POD_OOM_SWARM: 1,
+  NODE_CPU_SPIKE: 0,
+  NET_PACKET_LOSS: 2,
+};
+
+/** Human name of each rack's worker node, for terminal broadcasts. */
+export const RACK_WORKER_LABEL: Readonly<Record<RackIndex, string>> = {
+  0: 'worker-alpha',
+  1: 'worker-beta',
+  2: 'worker-gamma',
+};
 
 /* ==========================================================================
    Chaos presentation metadata

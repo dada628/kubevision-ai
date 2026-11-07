@@ -93,10 +93,12 @@ export type {
 
 export {
   CHAOS_SCENARIO_META,
+  CHAOS_TARGET_RACK,
   CONNECTION_MODES,
   ENTITY_TYPES,
   HEAL_ACTION_TYPES,
   POD_STATUS_FILTERS,
+  RACK_WORKER_LABEL,
   isConnectionMode,
   isEntityType,
   isHealActionType,
