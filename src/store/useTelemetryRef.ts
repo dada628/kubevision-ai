@@ -33,20 +33,23 @@
 
 import {
   INITIAL_CLUSTER_SNAPSHOT,
-  TELEMETRY_HISTORY_LENGTH,
   clampPercentage,
 } from '@/types/cluster';
 import type {
   AlertEvent,
   ChaosScenario,
   MasterNodeEntity,
-  NodeStatus,
   PodEntity,
   PodStatus,
   TelemetrySnapshot,
   WorkerNodeEntity,
 } from '@/types/cluster';
 import type { HealActionType } from '@/types/store';
+import {
+  computeHealthScore,
+  computeTotalQps,
+  pushSample,
+} from '@/utils/clusterHealth';
 
 /** Mutable alert mirror, used only inside this module. */
 type MutableAlertEvent = Mutable<AlertEvent>;
@@ -127,60 +130,19 @@ export function damp(
 /** Default easing rate for pod/node visual interpolation. */
 export const DEFAULT_DAMP_LAMBDA = 8;
 
-/** Penalty each pod status contributes to the composite health score. */
-const POD_HEALTH_PENALTY: Record<PodStatus, number> = {
-  Running: 0,
-  Pending: 4,
-  Terminating: 3,
-  CrashLoopBackOff: 8,
-  OOMKilled: 7,
-};
-
-/** Penalty each node status contributes to the composite health score. */
-const NODE_HEALTH_PENALTY: Record<NodeStatus, number> = {
-  Ready: 0,
-  HighLoad: 5,
-  NetworkPartition: 10,
-};
-
 /**
- * Deterministic composite health model.
+ * Health / throughput / ring-buffer maths live in `@/utils/clusterHealth`.
  *
- * 100 - (sum of pod penalties) - (sum of node penalties), clamped to [0, 100].
- * Deliberately simple and deterministic: the same snapshot always yields the
- * same score, on the server and in the browser.
+ * They are re-exported here (not re-implemented) so every existing importer of
+ * `@/store/useTelemetryRef` keeps working, while the SERVER-side synthetic
+ * engine can call the very same functions without pulling this `'use client'`
+ * module - and its mutable browser singleton - into the RSC graph.
  */
-export function computeHealthScore(
-  pods: readonly PodEntity[],
-  nodes: readonly WorkerNodeEntity[],
-): number {
-  let score = 100;
-  for (const pod of pods) {
-    score -= POD_HEALTH_PENALTY[pod.status];
-  }
-  for (const node of nodes) {
-    score -= NODE_HEALTH_PENALTY[node.status];
-  }
-  return clampPercentage(score);
-}
-
-/**
- * Deterministic QPS model for the demo: healthier clusters serve more traffic.
- * Monotonically decreasing in damage, so the HUD never shows "worse health but
- * more traffic", which would look broken.
- */
-export function computeTotalQps(healthScore: number): number {
-  const normalized = clampPercentage(healthScore) / 100;
-  return Math.round(28000 * normalized ** 1.35);
-}
-
-/** Append a sample to a fixed-length ring buffer, oldest first. In place. */
-export function pushSample(history: number[], value: number): void {
-  history.push(clampPercentage(value));
-  while (history.length > TELEMETRY_HISTORY_LENGTH) {
-    history.shift();
-  }
-}
+export {
+  computeHealthScore,
+  computeTotalQps,
+  pushSample,
+} from '@/utils/clusterHealth';
 
 /** Detached pod copy. Used for React-visible selection snapshots. */
 export function clonePod(pod: PodEntity): PodEntity {

@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import type { Color, InstancedMesh, MeshStandardMaterial } from 'three';
+import type { Color, Group, InstancedMesh, MeshStandardMaterial } from 'three';
 import {
   Color as ThreeColor,
   InstancedBufferAttribute,
@@ -424,6 +424,42 @@ export function PodInstancedMesh({
    */
   const hoverAnchor = useMemo(() => new Vector3(), []);
 
+  /**
+   * The tooltip's positioning group, captured so the frame loop can move it.
+   *
+   * WHY A REF AND NOT THE `position` PROP
+   * A `position` prop is applied ONCE per React commit. Mutating `hoverAnchor`
+   * afterwards changes nothing on screen, because no re-render is scheduled (and
+   * scheduling one at 60 Hz would break rule 3). Writing `group.position` directly
+   * is the only way to keep the label attached to a slot that drifts and pulses.
+   * The prop still seeds the group on mount, so the label never flashes at the
+   * cluster origin for a frame before the loop takes over.
+   */
+  const tooltipGroupRef = useRef<Group | null>(null);
+
+  /**
+   * Places `out` on the hovered slot's anchor, lifted clear of the cube.
+   *
+   * Reads the memoized slot table rather than the instance matrix, so it is valid
+   * before the first `useFrame` tick - which is what removes the one-frame flash
+   * at the cluster origin when a tooltip mounts.
+   *
+   * The SLOT ANCHOR is used, not the eased instance transform: the label is a
+   * readout for that cell, so it must stay put while the cell's own bounce, hover
+   * boost and shake animate underneath it. Chasing those would make the text jump
+   * at the exact moment an operator is trying to read it on a failing pod.
+   */
+  const writeTooltipAnchor = useCallback(
+    (slot: number, out: Vector3): Vector3 => {
+      const anchor = slotPositions[slot];
+      if (anchor === undefined) {
+        return out.copy(origin);
+      }
+      return out.set(anchor.x, anchor.y + POD_CUBE_SIZE * 0.9, anchor.z);
+    },
+    [origin, slotPositions],
+  );
+
   /* Release the shared cursor if this mesh unmounts while still hovered: React
      never fires `pointerout` for a removed object. */
   useEffect(
@@ -474,6 +510,11 @@ export function PodInstancedMesh({
       const alreadyHovered = hoveredSlotRef.current === resolved.slot;
       if (!alreadyHovered) {
         hoveredSlotRef.current = resolved.slot;
+        /* Place the label BEFORE it mounts: `tooltipPodId` schedules the render,
+           and the ref callback seeds the group from this same vector. Doing it
+           here (not only in the frame loop) is what stops the tooltip from
+           appearing for one frame at the cluster origin. */
+        writeTooltipAnchor(resolved.slot, hoverAnchor);
         setTooltipPodId(resolved.pod.id);
       }
 
@@ -487,7 +528,7 @@ export function PodInstancedMesh({
         pointerCursorSlotRef.current = resolved.slot;
       }
     },
-    [resolvePodForInstance],
+    [resolvePodForInstance, writeTooltipAnchor, hoverAnchor],
   );
 
   const handlePointerOut = useCallback(() => {
@@ -742,12 +783,14 @@ export function PodInstancedMesh({
         }
       }
 
-      /* Track the slot's live anchor so the label stays glued to the cell even
-         while a failing pod shakes. */
-      const anchor = slotPositions[hoveredSlot];
-      if (anchor !== undefined) {
-        hoverAnchor.copy(anchor);
-        hoverAnchor.y += POD_CUBE_SIZE * 0.9;
+      /* Track the slot's live anchor so the label stays glued to the cell. The anchor
+         is a CONSTANT per slot (the grid never moves), but the write still has to
+         happen here: the group is only reachable after mount, and R3F applies a
+         `position` prop once per commit. See `tooltipGroupRef`. */
+      writeTooltipAnchor(hoveredSlot, hoverAnchor);
+      const tooltipGroup = tooltipGroupRef.current;
+      if (tooltipGroup !== null) {
+        tooltipGroup.position.copy(hoverAnchor);
       }
     }
   });
@@ -785,54 +828,58 @@ export function PodInstancedMesh({
 
       {/*
         HOVER TOOLTIP - one label, mounted only while hovering.
-        Its position is driven by `hoverAnchor`, mutated in the frame loop, so the
-        label follows the cell without a re-render. `pointerEvents="none"` is
-        mandatory: a hit-testable DOM overlay above the canvas would swallow the
-        very pointer moves that drive the hover, and the label would latch on
-        forever.
+        The OUTER `<group>` is what moves: `useFrame` writes its `position` every
+        tick from the slot's live anchor, so the label follows a shaking cell
+        without a React render. Passing the anchor through `<Html position>` alone
+        would NOT work - three applies that prop once, on commit.
+
+        `pointerEvents="none"` is mandatory: a hit-testable DOM overlay above the
+        canvas would swallow the very pointer moves that drive the hover, and the
+        label would latch on forever.
       */}
       {tooltipPodId === null ? null : (
-        <Html
-          position={[hoverAnchor.x, hoverAnchor.y, hoverAnchor.z]}
-          center
-          distanceFactor={18}
-          pointerEvents="none"
-          wrapperClass={HTML_OVERLAY_WRAPPER_CLASS}
-          zIndexRange={[40, 0]}
-        >
-          {/*
-            `wrapperClass` + inline `pointerEvents` are load-bearing, not
-            belt-and-braces: drei's non-`transform` Html drops the `pointerEvents`
-            prop, so without them this tooltip is hit-testable. Mounted directly over
-            the hovered cell, it would swallow the `pointermove` stream that keeps it
-            alive - the label would latch on and never clear. See `htmlOverlay.ts`.
-          */}
-          <div
-            ref={tooltipBoxRef}
-            className="select-none whitespace-nowrap rounded border bg-slate-950/92 px-2 py-1 text-center backdrop-blur-md"
-            style={{
-              ...HTML_OVERLAY_CONTENT_STYLE,
-              borderColor: '#22d3ee',
-              color: '#22d3ee',
-            }}
+        <group ref={tooltipGroupRef} position={[hoverAnchor.x, hoverAnchor.y, hoverAnchor.z]}>
+          <Html
+            center
+            distanceFactor={18}
+            pointerEvents="none"
+            wrapperClass={HTML_OVERLAY_WRAPPER_CLASS}
+            zIndexRange={[40, 0]}
           >
-            <span
-              ref={tooltipNameRef}
-              className="block font-mono text-[10px] uppercase tracking-[0.16em]"
+            {/*
+              `wrapperClass` + inline `pointerEvents` are load-bearing, not
+              belt-and-braces: drei's non-`transform` Html drops the `pointerEvents`
+              prop, so without them this tooltip is hit-testable. Mounted directly over
+              the hovered cell, it would swallow the `pointermove` stream that keeps it
+              alive - the label would latch on and never clear. See `htmlOverlay.ts`.
+            */}
+            <div
+              ref={tooltipBoxRef}
+              className="select-none whitespace-nowrap rounded border bg-slate-950/92 px-2 py-1 text-center backdrop-blur-md"
+              style={{
+                ...HTML_OVERLAY_CONTENT_STYLE,
+                borderColor: '#22d3ee',
+                color: '#22d3ee',
+              }}
             >
-              pod
-            </span>
-            <span className="mt-0.5 flex items-center justify-center gap-1.5 font-mono text-[8px] tracking-wider text-slate-400">
-              <span ref={tooltipStatusRef}>--</span>
-              <span className="text-slate-700" aria-hidden>
-                |
+              <span
+                ref={tooltipNameRef}
+                className="block font-mono text-[10px] uppercase tracking-[0.16em]"
+              >
+                pod
               </span>
-              <span>
-                cpu <span ref={tooltipCpuRef}>--</span>
+              <span className="mt-0.5 flex items-center justify-center gap-1.5 font-mono text-[8px] tracking-wider text-slate-400">
+                <span ref={tooltipStatusRef}>--</span>
+                <span className="text-slate-700" aria-hidden>
+                  |
+                </span>
+                <span>
+                  cpu <span ref={tooltipCpuRef}>--</span>
+                </span>
               </span>
-            </span>
-          </div>
-        </Html>
+            </div>
+          </Html>
+        </group>
       )}
     </>
   );
