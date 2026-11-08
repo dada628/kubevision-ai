@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactElement, ReactNode } from 'react';
+import { EdgeLogClassifier } from '@/components/EdgeLogClassifier';
 import { ShellLayout } from './ShellLayout';
 import { TopologyViewport } from '@/components/canvas/TopologyViewport';
 import { ChaosControlModal } from '@/components/hud/ChaosControlModal';
@@ -32,6 +33,10 @@ import { useTelemetryStream } from '@/hooks/useTelemetryStream';
  *
  * The right-hand copilot is passed in from `page.tsx` so the page owns which
  * drawer fills `copilotSlot`.
+ *
+ * `EdgeLogClassifier` is mounted here, once, for the same reason as the two
+ * hooks: the ONNX worker must not be constructed per panel. Its effect creates
+ * the worker after mount and `terminate()`s it on unmount.
  */
 export function DashboardShell({ copilotSlot }: { readonly copilotSlot?: ReactNode }): ReactElement {
   useHudSync();
@@ -39,6 +44,7 @@ export function DashboardShell({ copilotSlot }: { readonly copilotSlot?: ReactNo
 
   return (
     <>
+      <EdgeLogClassifier />
       <ShellLayout viewportSlot={<TopologyViewport />} copilotSlot={copilotSlot} />
       {/*
         The chaos drill modal is a SIBLING of the shell, not a child of the

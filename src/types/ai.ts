@@ -272,12 +272,38 @@ export interface LogSource {
 }
 
 /**
+ * Highlight tokens written by `sanitizeRawLog`.
+ *
+ * IPv4 addresses become `[REDACTED_IP]`, bearer tokens and JWTs become
+ * `[MASKED_TOKEN]`, access keys and inline passwords become `[MASKED_KEY]`,
+ * and mailboxes become `[REDACTED_EMAIL]`. The brackets are the highlight;
+ * the line stays plain text and can be rendered without another sanitizer.
+ */
+export const REDACTION_MARKERS = {
+  ip: '[REDACTED_IP]',
+  token: '[MASKED_TOKEN]',
+  key: '[MASKED_KEY]',
+  email: '[REDACTED_EMAIL]',
+} as const;
+
+export type RedactionMarker =
+  (typeof REDACTION_MARKERS)[keyof typeof REDACTION_MARKERS];
+
+/** Return value of the synchronous log redactor. */
+export interface SanitizedLog {
+  /** Line with every recognised secret replaced by a `RedactionMarker`. */
+  readonly sanitized: string;
+  /** How many secrets were replaced. Zero when `sanitized === raw`. */
+  readonly maskedCount: number;
+}
+
+/**
  * A single log record as it travels the edge-audit pipeline.
  *
- * `rawText` MUST stay in the worker/main-thread boundary only; it is what gets
- * classified. `redactedText` is what is allowed to leave the device or be
- * persisted - secrets, bearer tokens, IPs and emails are masked before the
- * record reaches React state or telemetry export.
+ * `rawText` crosses into the edge worker and nowhere else. The worker masks it
+ * before classification and before anything is posted back, so the tensor and
+ * the main thread both see the sanitized line. `redactedText` is that masked
+ * line: the only form allowed to reach React state or telemetry export.
  */
 export interface LogEntry {
   /** Stable record id, used for dedupe and virtualized list keys. */
@@ -304,16 +330,20 @@ export interface AuditHypothesis {
 /**
  * Result of running Transformers.js over one (or one batch of) `LogEntry`.
  *
- * `inferenceMs` measures the main-thread-observed wall time for the worker's
- * classify round trip, so it includes ONNX session overhead and message
- * passing - which is exactly what the latency HUD needs to display.
+ * `inferenceMs` is the on-device forward-pass time stamped by the worker,
+ * rounded to 2 decimal places. It does not include the `postMessage` hop.
  */
 export interface EdgeAuditResult {
   /** Label with the highest confidence. */
   readonly label: EdgeAuditLabel;
   /** Confidence of `label`, in [0, 1]. */
   readonly confidence: UnitInterval;
-  /** Inference wall time in milliseconds, >= 0. */
+  /**
+   * On-device inference wall time in milliseconds, rounded to 2 decimal places
+   * and always >= 0. Stamped inside the worker around the forward pass that
+   * produced `label` (the vector engine, plus the ONNX session when it
+   * answered). Message-passing after `postMessage` is not included.
+   */
   readonly inferenceMs: number;
   /** Id of the audited `LogEntry`. */
   readonly logEntryId: string;
@@ -322,9 +352,103 @@ export interface EdgeAuditResult {
    * only the argmax label; the UI degrades to a single bar in that case.
    */
   readonly hypotheses?: AuditHypothesis[];
-  /** True when `confidence` fell below the pipeline's action threshold. */
+  /** True when `confidence` fell below `EDGE_AUDIT_ACTION_THRESHOLD`. */
   readonly belowThreshold: boolean;
 }
+
+/**
+ * Confidence at or below this value sets `EdgeAuditResult.belowThreshold`.
+ * The worker still returns the best label; the flag only withholds an
+ * automatic action.
+ */
+export const EDGE_AUDIT_ACTION_THRESHOLD = 0.55;
+
+/* ==========================================================================
+   Edge classifier worker protocol
+   ========================================================================== */
+
+/** Which engine produced an audit. `vector` is the offline fallback. */
+export const EDGE_CLASSIFIER_ENGINES = ['transformers', 'vector'] as const;
+
+export type EdgeClassifierEngine = (typeof EDGE_CLASSIFIER_ENGINES)[number];
+
+/** Download / readiness states the worker posts while shards arrive. */
+export const EDGE_MODEL_PROGRESS_STATUSES = [
+  'initiate',
+  'download',
+  'progress',
+  'done',
+  'ready',
+  'fallback',
+] as const;
+
+export type EdgeModelProgressStatus =
+  (typeof EDGE_MODEL_PROGRESS_STATUSES)[number];
+
+/**
+ * One progress sample in the inclusive range [0, 100].
+ * `percent` stays at most 99 until `status` is `ready` or `fallback`.
+ */
+export interface EdgeModelProgress {
+  readonly percent: number;
+  readonly status: EdgeModelProgressStatus;
+  /** Shard file name, or null for a worker-level transition. */
+  readonly file: string | null;
+}
+
+/** Ask the worker to classify one already-or-not-yet sanitized log line. */
+export interface EdgeClassifyRequest {
+  readonly type: 'classify';
+  /** `LogEntry.id`. */
+  readonly logEntryId: string;
+  /** Raw or already-sanitized container log. The worker masks it either way. */
+  readonly text: string;
+}
+
+/** Optional poke. The worker also warms the model as soon as it starts. */
+export interface EdgeWarmupRequest {
+  readonly type: 'warmup';
+}
+
+export type EdgeClassifierCommand = EdgeClassifyRequest | EdgeWarmupRequest;
+
+export interface EdgeProgressEvent {
+  readonly type: 'progress';
+  readonly progress: EdgeModelProgress;
+}
+
+export interface EdgeReadyEvent {
+  readonly type: 'ready';
+  readonly engine: EdgeClassifierEngine;
+  readonly percent: 100;
+  /**
+   * True when `navigator.gpu.requestAdapter` resolved an adapter.
+   * The pinned Transformers.js 2.17 build still executes on WASM; the flag
+   * records that the browser offered WebGPU.
+   */
+  readonly webGpuAvailable: boolean;
+  readonly executionProvider: 'wasm';
+}
+
+export interface EdgeAuditEvent {
+  readonly type: 'audit';
+  readonly engine: EdgeClassifierEngine;
+  readonly sanitized: string;
+  readonly maskedCount: number;
+  readonly result: EdgeAuditResult;
+}
+
+export interface EdgeClassifierFaultEvent {
+  readonly type: 'fault';
+  readonly message: string;
+  readonly logEntryId: string | null;
+}
+
+export type EdgeClassifierEvent =
+  | EdgeProgressEvent
+  | EdgeReadyEvent
+  | EdgeAuditEvent
+  | EdgeClassifierFaultEvent;
 
 /* ==========================================================================
    Runtime guards
@@ -366,6 +490,41 @@ export function isEdgeAuditLabel(value: unknown): value is EdgeAuditLabel {
   return (
     typeof value === 'string' &&
     (EDGE_AUDIT_LABELS as readonly string[]).includes(value)
+  );
+}
+
+export function isEdgeClassifierEngine(
+  value: unknown,
+): value is EdgeClassifierEngine {
+  return (
+    typeof value === 'string' &&
+    (EDGE_CLASSIFIER_ENGINES as readonly string[]).includes(value)
+  );
+}
+
+export function isEdgeModelProgressStatus(
+  value: unknown,
+): value is EdgeModelProgressStatus {
+  return (
+    typeof value === 'string' &&
+    (EDGE_MODEL_PROGRESS_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+export function isEdgeClassifierCommand(
+  value: unknown,
+): value is EdgeClassifierCommand {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as { type?: unknown; logEntryId?: unknown; text?: unknown };
+  if (record.type === 'warmup') {
+    return true;
+  }
+  return (
+    record.type === 'classify' &&
+    typeof record.logEntryId === 'string' &&
+    typeof record.text === 'string'
   );
 }
 
