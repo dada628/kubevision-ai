@@ -10,7 +10,7 @@
  * the topology camera to that pod.
  */
 
-import { useEffect, useRef, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from 'react';
 import { useChat, type Message } from 'ai/react';
 import { Eraser, Loader2, Lock, SendHorizontal, Square, TriangleAlert } from 'lucide-react';
 import { ActionConfirm } from '@/components/ai/GenUI/ActionConfirm';
@@ -20,6 +20,19 @@ import { RootCauseAlert } from '@/components/ai/GenUI/RootCauseAlert';
 import { readChatClusterContext } from '@/components/ai/readChatClusterContext';
 import { useActiveChaos, useClusterStore, useClusterSummary } from '@/store/useClusterStore';
 import type { ActionConfirmProps, PodMetricsCardProps, RootCauseAlertProps } from '@/types/ai';
+
+/** Composer block height. The transcript takes whatever remains above the handle. */
+const COMPOSER_MIN_PX = 88;
+const COMPOSER_MAX_PX = 360;
+const COMPOSER_DEFAULT_PX = 156;
+const TRANSCRIPT_MIN_PX = 120;
+const RESIZE_HANDLE_PX = 32;
+const COMPOSER_HEIGHT_KEY = 'kv-copilot-composer-height';
+
+function clampComposerHeight(height: number, max: number): number {
+  const upper = Math.max(COMPOSER_MIN_PX, max);
+  return Math.min(upper, Math.max(COMPOSER_MIN_PX, Math.round(height)));
+}
 
 const ACTION_CHIPS = [
   { id: 'inspect', label: '全面巡检当前集群异常' },
@@ -259,9 +272,101 @@ export function CopilotDrawer(): ReactElement {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
   const busy = status === 'submitted' || status === 'streaming';
   const online = error === undefined;
   const boundName = selected?.entity.name ?? null;
+
+  const [composerHeight, setComposerHeight] = useState(COMPOSER_DEFAULT_PX);
+  const [splitHeight, setSplitHeight] = useState(0);
+  const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+
+  const composerMax = splitHeight === 0
+    ? COMPOSER_MAX_PX
+    : Math.max(COMPOSER_MIN_PX, splitHeight - RESIZE_HANDLE_PX - TRANSCRIPT_MIN_PX);
+  const composerPx = clampComposerHeight(composerHeight, composerMax);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(COMPOSER_HEIGHT_KEY);
+    const parsed = stored === null ? Number.NaN : Number(stored);
+    if (Number.isFinite(parsed)) {
+      setComposerHeight(clampComposerHeight(parsed, COMPOSER_MAX_PX));
+    }
+  }, []);
+
+  useEffect(() => {
+    const split = splitRef.current;
+    if (split === null) {
+      return;
+    }
+    const measure = (): void => {
+      setSplitHeight(split.clientHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(split);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const commitComposerHeight = (height: number): void => {
+    const next = clampComposerHeight(height, composerMax);
+    setComposerHeight(next);
+    window.localStorage.setItem(COMPOSER_HEIGHT_KEY, String(next));
+  };
+
+  const onResizePointerDown = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: composerPx,
+    };
+  };
+
+  const onResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    /* The grip sits on top of the composer. Pointer Y and the grip move together:
+       dragging down shortens the composer, dragging up lengthens it. */
+    setComposerHeight(clampComposerHeight(drag.startHeight - (event.clientY - drag.startY), composerMax));
+  };
+
+  const onResizePointerUp = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    dragRef.current = null;
+    commitComposerHeight(drag.startHeight - (event.clientY - drag.startY));
+  };
+
+  const onResizeKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      commitComposerHeight(composerPx + step);
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      commitComposerHeight(composerPx - step);
+      return;
+    }
+    if (event.key === 'Home') {
+      event.preventDefault();
+      commitComposerHeight(composerMax);
+      return;
+    }
+    if (event.key === 'End') {
+      event.preventDefault();
+      commitComposerHeight(COMPOSER_MIN_PX);
+    }
+  };
 
   useEffect(() => {
     if (quickPrompt === null) {
@@ -450,7 +555,7 @@ export function CopilotDrawer(): ReactElement {
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-label="KubeVision SRE Copilot">
-      <header className="shrink-0 space-y-2 border-b border-slate-800 pb-3">
+      <header className="shrink-0 space-y-2 border-b border-slate-800 pb-2">
         {showAnomaly ? (
           <div
             role="status"
@@ -465,7 +570,7 @@ export function CopilotDrawer(): ReactElement {
               aria-hidden
             />
             <p className={`min-w-0 flex-1 text-sm leading-6 ${anomalyCritical ? 'text-rose-100' : 'text-amber-100'}`}>
-              ⚠️ 检测到 {anomalyCount} 个容器实例异常，是否立即启动 SRE 根因分析？
+              检测到 {anomalyCount} 个容器实例异常，是否立即启动 SRE 根因分析？
             </p>
             <button
               type="button"
@@ -480,18 +585,36 @@ export function CopilotDrawer(): ReactElement {
             </button>
           </div>
         ) : null}
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold tracking-wide text-slate-100">KubeVision SRE Copilot</h2>
-            <p className="mt-1 flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-slate-400">
-              <span
-                className={`h-2 w-2 rounded-full ${online ? 'bg-emerald-400 shadow-glow-emerald' : 'bg-rose-500 shadow-glow-rose'}`}
-                aria-hidden
-              />
-              <span className={online ? 'text-emerald-300' : 'text-rose-300'}>{online ? '在线' : '中断'}</span>
-              {busy ? <span className="text-cyan-300">· 生成中</span> : null}
+        <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold tracking-wide text-slate-100">KubeVision SRE Copilot</h2>
+          <p className="mt-1 flex items-center gap-1.5 font-mono text-xs uppercase tracking-widest text-slate-400">
+            <span
+              className={`h-2 w-2 rounded-full ${online ? 'bg-emerald-400 shadow-glow-emerald' : 'bg-rose-500 shadow-glow-rose'}`}
+              aria-hidden
+            />
+            <span className={online ? 'text-emerald-300' : 'text-rose-300'}>{online ? '在线' : '中断'}</span>
+            {busy ? <span className="text-cyan-300">· 生成中</span> : null}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {selected === null || boundName === null ? (
+            <p className="inline-flex min-h-11 items-center rounded-full border border-slate-800 bg-slate-900/75 px-3 font-mono text-xs text-slate-500">
+              未绑定实体
             </p>
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={diagnoseBound}
+              disabled={busy}
+              title={boundName}
+              aria-label={`快速诊断已绑定的 ${boundName}`}
+              className="inline-flex min-h-11 max-w-[10rem] items-center gap-1.5 rounded-full border border-cyan-400/50 bg-cyan-400/10 px-3 font-mono text-xs text-cyan-200 outline-none ring-cyan-400 hover:bg-cyan-400/20 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{boundName}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={clearSession}
@@ -502,25 +625,10 @@ export function CopilotDrawer(): ReactElement {
             清空会话
           </button>
         </div>
-        {selected === null || boundName === null ? (
-          <p className="inline-flex min-h-11 items-center rounded-full border border-slate-800 bg-slate-900/75 px-3 font-mono text-xs text-slate-500">
-            未绑定实体
-          </p>
-        ) : (
-          <button
-            type="button"
-            onClick={diagnoseBound}
-            disabled={busy}
-            title={boundName}
-            aria-label={`快速诊断已绑定的 ${boundName}`}
-            className="inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border border-cyan-400/50 bg-cyan-400/10 px-3 font-mono text-xs text-cyan-200 outline-none ring-cyan-400 hover:bg-cyan-400/20 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{boundName}</span>
-          </button>
-        )}
+        </div>
       </header>
 
+      <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollerRef}
         className="min-h-0 flex-1 overflow-y-auto overflow-anchor-none overscroll-contain py-3"
@@ -569,15 +677,38 @@ export function CopilotDrawer(): ReactElement {
         </div>
       </div>
 
-      <form className="shrink-0 space-y-2 border-t border-slate-800 pt-3" onSubmit={onSubmit}>
-        <div className="flex flex-wrap gap-2" aria-label="快捷指令">
+      <button
+        type="button"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="拖动调整聊天正文高度"
+        title="分隔条跟随指针"
+        aria-valuemin={COMPOSER_MIN_PX}
+        aria-valuemax={Math.round(composerMax)}
+        aria-valuenow={composerPx}
+        onPointerDown={onResizePointerDown}
+        onPointerMove={onResizePointerMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerUp}
+        onKeyDown={onResizeKeyDown}
+        className="group flex h-8 w-full shrink-0 cursor-row-resize touch-none items-center justify-center outline-none ring-cyan-400 focus-visible:ring-2"
+      >
+        <span className="h-1 w-10 rounded-full bg-slate-700 transition-colors duration-150 group-hover:bg-cyan-400 group-focus-visible:bg-cyan-400" />
+      </button>
+
+      <form
+        className="shrink-0 space-y-2 overflow-y-auto overscroll-contain border-t border-slate-800 pt-3"
+        style={{ height: composerPx }}
+        onSubmit={onSubmit}
+      >
+        <div className="flex flex-nowrap gap-2 overflow-x-auto overscroll-contain pb-1" aria-label="快捷指令">
           {ACTION_CHIPS.map((chip) => (
             <button
               key={chip.id}
               type="button"
               disabled={busy}
               onClick={() => ask(chip.label)}
-              className="inline-flex min-h-11 items-center rounded-full border border-slate-700 bg-slate-900/75 px-3 text-left text-sm leading-5 text-slate-200 outline-none ring-cyan-400 hover:border-cyan-400/50 hover:text-cyan-100 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-full border border-slate-700 bg-slate-900/75 px-3 text-left text-sm leading-5 text-slate-200 outline-none ring-cyan-400 hover:border-cyan-400/50 hover:text-cyan-100 focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {chip.label}
             </button>
@@ -617,6 +748,7 @@ export function CopilotDrawer(): ReactElement {
           ) : null}
         </div>
       </form>
+      </div>
     </section>
   );
 }
