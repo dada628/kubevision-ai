@@ -36,7 +36,6 @@ import { Html } from '@react-three/drei';
 import { Color, InstancedMesh, Matrix4, Object3D as Object3DRef } from 'three';
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { useClusterStore } from '@/store/useClusterStore';
-import { getSnapshot } from '@/store/useTelemetryRef';
 import { acquirePointerCursor, releasePointerCursor } from './cursorPointer';
 import {
   HTML_OVERLAY_CONTENT_STYLE,

@@ -65,6 +65,12 @@ export const dynamic = 'force-dynamic';
  */
 export const runtime = 'nodejs';
 
+/**
+ * Serverless 墙钟上限。到点后平台回收这条 SSE，浏览器里的
+ * `EventSource` 失败会切到本地仿真，时间线由页面内引擎继续推进。
+ */
+export const maxDuration = 30;
+
 /* ==========================================================================
    Response headers
    ========================================================================== */

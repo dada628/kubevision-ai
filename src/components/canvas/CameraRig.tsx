@@ -201,16 +201,6 @@ export function CameraRig(): ReactElement {
     [scratch],
   );
 
-  /** True when the pose currently being eased is the overview framing. */
-  const goalIsOverview = useCallback((): boolean => {
-    const { goalPosition } = scratch;
-    return (
-      goalPosition.x === 0 &&
-      goalPosition.y === OVERVIEW_CAMERA_POSITION[1] &&
-      goalPosition.z === OVERVIEW_CAMERA_POSITION[2]
-    );
-  }, [scratch]);
-
   /* Initial pivot: the overview target, so the very first orbit drag rotates
      around the cluster centroid instead of around the world origin. */
   useEffect(() => {

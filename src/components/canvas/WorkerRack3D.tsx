@@ -94,19 +94,19 @@ const TRAY_INSET_X = 0.26;
 const TRAY_THICKNESS = 0.3;
 
 /**
- * Y of the tray stack's first and last centres.
+ * Y of the first tray centre.
  *
  * The four trays must span the FULL usable chassis height, not cluster near the
  * floor: with a fixed 1.0 base and 0.64 pitch the top tray landed at y=2.92
  * inside a 5.2-tall chassis, leaving the upper 44% as empty armour and making
  * the rack read as half-populated.
  *
- * These MUST equal `POD_SLOT_BASE_Y` / `POD_TRAY_PITCH` in `topologyLayout`:
- * `PodInstancedMesh` stands its containers on these exact shelves, so a drift
- * between the two files would leave the pods hovering between trays.
+ * This MUST equal `POD_SLOT_BASE_Y` in `topologyLayout`, and `TRAY_PITCH` MUST
+ * equal `POD_TRAY_PITCH`. `PodInstancedMesh` stands its containers on these
+ * exact shelves, so a drift between the two files would leave the pods hovering
+ * between trays.
  */
 const TRAY_BASE_Y = POD_SLOT_BASE_Y;
-const TRAY_TOP_Y = RACK_HEIGHT - POD_SLOT_BASE_Y;
 
 /** Vertical pitch between tray centres, derived from the span above. */
 const TRAY_PITCH = POD_TRAY_PITCH;

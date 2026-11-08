@@ -25,7 +25,7 @@
  * shader's fragment source is a module constant, so no string is ever rebuilt.
  */
 
-import { useEffect, useMemo, useRef, type ReactElement } from 'react';
+import { useMemo, useRef, type ReactElement } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh, ShaderMaterial } from 'three';
 import { Color, DoubleSide, Vector3 } from 'three';

@@ -62,6 +62,9 @@ import type { EntityType } from '@/types/store';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/** Vercel Node 函数墙钟上限。流式工具调用在此时限内结束，超时由客户端中止。 */
+export const maxDuration = 30;
+
 const TYPEWRITER_CHARS = 3;
 const TYPEWRITER_MS = 14;
 const TOOL_ARG_CHARS = 48;

@@ -29,7 +29,6 @@ import {
 } from '@/types/cluster';
 import type { ChaosScenario, PodStatus } from '@/types/cluster';
 import {
-  isEntityType,
   isHealActionType,
   isPodStatusFilter,
   isTerminalLogChannel,
