@@ -213,6 +213,21 @@ export interface ActionConfirmProps {
   readonly errorMessage?: string;
 }
 
+/**
+ * Placeholder shown while a tool call's arguments are still streaming.
+ *
+ * The model emits the tool name before the argument object is complete. `toolName`
+ * may therefore be absent, partial (`"PodMet"`), or already final. The skeleton
+ * must render in every one of those states and must not require a parsed payload.
+ */
+export interface GenUISkeletonProps {
+  /**
+   * Tool name as far as the stream has produced it. Omit while even the name
+   * has not arrived. Never a parsed argument object.
+   */
+  readonly toolName?: string;
+}
+
 /* ==========================================================================
    Edge log audit
    ========================================================================== */

@@ -60,6 +60,7 @@ export type {
   MetricDatum,
   MetricTone,
   MetricTrend,
+  GenUISkeletonProps,
   PodMetricsCardProps,
   RecommendedAction,
   RecommendedActionKind,

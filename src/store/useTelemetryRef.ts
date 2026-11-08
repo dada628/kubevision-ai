@@ -310,6 +310,22 @@ export const telemetryTransientRef: TelemetryTransientRef = {
  */
 refreshTargets();
 
+/**
+ * Pods and nodes a client-side `healEntity` has already restored.
+ *
+ * The SSE generator does not observe that heal: its next frame still describes
+ * the pre-heal fault and `writeSnapshot` would paint the crash straight back
+ * onto the mesh. Ids in these sets keep the healed status, load and history
+ * until a chaos scenario rewrites the scene or the pool is reset.
+ */
+const clientHealedPodIds = new Set<string>();
+const clientHealedNodeIds = new Set<string>();
+
+function clearClientHeals(): void {
+  clientHealedPodIds.clear();
+  clientHealedNodeIds.clear();
+}
+
 /* ==========================================================================
    Read accessors (allocation-free)
    ========================================================================== */
@@ -458,7 +474,13 @@ export function writeSnapshot(next: TelemetrySnapshot, nowMs?: number): void {
   replacePods(next.pods);
   replaceNodes(next.nodes);
 
-  live.activeAlerts = next.activeAlerts.map((alert) => ({ ...alert }));
+  live.activeAlerts = next.activeAlerts.map((alert) => {
+    const copy = { ...alert };
+    if (clientHealedPodIds.has(alert.sourceId) || clientHealedNodeIds.has(alert.sourceId)) {
+      copy.resolved = true;
+    }
+    return copy;
+  });
 
   telemetryTransientRef.revision += 1;
   refreshTargets();
@@ -490,14 +512,18 @@ function replacePods(next: readonly PodEntity[]): void {
     target.name = incoming.name;
     target.namespace = incoming.namespace;
     target.nodeId = incoming.nodeId;
-    target.status = incoming.status;
-    target.cpuUsage = clampPercentage(incoming.cpuUsage);
-    target.memoryUsage = clampPercentage(incoming.memoryUsage);
-    target.restarts = incoming.restarts;
     target.ip = incoming.ip;
     target.createdAt = incoming.createdAt;
-    target.cpuHistory = [...incoming.cpuHistory];
-    target.memHistory = [...incoming.memHistory];
+    /* A healed pod keeps the values `applyHeal` just wrote. Copying the frame
+       here would resurrect CrashLoop / OOM within one second. */
+    if (existing === undefined || !clientHealedPodIds.has(incoming.id)) {
+      target.status = incoming.status;
+      target.cpuUsage = clampPercentage(incoming.cpuUsage);
+      target.memoryUsage = clampPercentage(incoming.memoryUsage);
+      target.restarts = incoming.restarts;
+      target.cpuHistory = [...incoming.cpuHistory];
+      target.memHistory = [...incoming.memHistory];
+    }
     return target;
   });
 
@@ -526,7 +552,9 @@ function replaceNodes(next: readonly WorkerNodeEntity[]): void {
     };
     target.name = incoming.name;
     target.ip = incoming.ip;
-    target.status = incoming.status;
+    if (existing === undefined || !clientHealedNodeIds.has(incoming.id)) {
+      target.status = incoming.status;
+    }
     target.cpuCapacity = incoming.cpuCapacity;
     target.memCapacity = incoming.memCapacity;
     target.networkMbps = incoming.networkMbps;
@@ -587,6 +615,8 @@ export function noteFrame(deltaSeconds: number): void {
  * tracks the visual state.
  */
 export function applyChaos(scenario: ChaosScenario): void {
+  /* A new scenario is a new scene. Heals from the previous one must not mask it. */
+  clearClientHeals();
   const live = telemetryTransientRef.snapshot;
 
   switch (scenario) {
@@ -850,6 +880,7 @@ export function applyHeal(
     }
 
     markAlertsResolved(live, (alert) => alert.sourceId === pod.id);
+    clientHealedPodIds.add(pod.id);
     recomputeAggregates(live);
     telemetryTransientRef.revision += 1;
     refreshTargets();
@@ -891,10 +922,12 @@ export function applyHeal(
     }
     applyHealToPod(hosted, cpuForHosted, memForHosted, false);
     markAlertsResolved(live, (alert) => alert.sourceId === hosted.id);
+    clientHealedPodIds.add(hosted.id);
     affectedPodCount += 1;
     lastCpu = hosted.cpuUsage;
   }
   markAlertsResolved(live, (alert) => alert.sourceId === node.id);
+  clientHealedNodeIds.add(node.id);
   recomputeAggregates(live);
   telemetryTransientRef.revision += 1;
   refreshTargets();
@@ -922,6 +955,7 @@ export function applyHeal(
  * would silently wipe live telemetry, so it is not exposed on the store.
  */
 export function resetTelemetryTransient(): void {
+  clearClientHeals();
   const fresh = createLiveSnapshot();
   telemetryTransientRef.snapshot = fresh;
   telemetryTransientRef.currentFps = 60;

@@ -382,6 +382,84 @@
 }
 
 /* ============================================================================
+   Generative UI — 800ms self-heal stream.
+   The fill scales on X only (no layout) and the gleam translates once.
+   The reduced-motion block below collapses both to a single frame; the
+   caller still waits 800ms before invoking healEntity.
+   ========================================================================== */
+@keyframes kv-heal-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes kv-heal-gleam {
+  from {
+    transform: translateX(-140%);
+  }
+  to {
+    transform: translateX(440%);
+  }
+}
+
+.kv-heal-fill {
+  transform-origin: left center;
+  animation: kv-heal-fill 800ms linear forwards;
+}
+
+.kv-heal-gleam {
+  animation: kv-heal-gleam 800ms linear forwards;
+}
+
+/* ============================================================================
+   Generative UI — scan while a tool-call argument object is still streaming.
+   The band translates on Y only. Reduced motion collapses it to one frame.
+   ========================================================================== */
+@keyframes kv-genui-scan {
+  from {
+    transform: translateY(-130%);
+  }
+  to {
+    transform: translateY(720%);
+  }
+}
+
+.kv-genui-scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 2;
+  height: 18%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--kv-accent) / 0.05) 20%,
+    rgb(255 255 255 / 0.55) 50%,
+    rgb(var(--kv-accent) / 0.28) 62%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  animation: kv-genui-scan 1.8s linear infinite;
+}
+
+@keyframes kv-genui-gleam {
+  from {
+    transform: translateX(-160%);
+  }
+  to {
+    transform: translateX(420%);
+  }
+}
+
+.kv-genui-gleam {
+  animation: kv-genui-gleam 1.6s linear infinite;
+}
+
+/* ============================================================================
    Motion & accessibility guards
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
