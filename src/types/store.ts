@@ -282,6 +282,18 @@ export interface ChaosScenarioMeta {
   readonly tone: 'neutral' | 'healthy' | 'elevated' | 'critical';
 }
 
+/**
+ * One-shot diagnosis handed from the inspect probe to the copilot drawer.
+ *
+ * `id` is monotonic. The prompt text alone cannot be the signal: Zustand
+ * compares strings by value, so a second click with the same sentence would
+ * never re-render the drawer.
+ */
+export interface QuickPromptRequest {
+  readonly id: number;
+  readonly prompt: string;
+}
+
 export const CHAOS_SCENARIO_META: readonly ChaosScenarioMeta[] = [
   {
     scenario: 'NONE',

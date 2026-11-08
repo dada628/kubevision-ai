@@ -45,6 +45,7 @@ import type {
   HealActionType,
   ParsedTerminalLogLine,
   PodStatusFilter,
+  QuickPromptRequest,
   SelectedEntitySnapshot,
   TerminalLogChannel,
 } from '@/types/store';
@@ -329,6 +330,8 @@ export interface ClusterStoreState {
   /* ---------------------------- selection ---------------------------- */
   selectedEntityId: string | null;
   selectedEntityType: EntityType | null;
+  /** Increments when the copilot asks the camera to fly to the current selection. */
+  cameraFocusNonce: number;
 
   /* ------------------------- connection mode ------------------------- */
   connectionMode: ConnectionMode;
@@ -349,7 +352,7 @@ export interface ClusterStoreState {
   terminalLogs: string[];
 
   /* --------------------------- AI copilot ---------------------------- */
-  quickPromptTrigger: string | null;
+  quickPromptTrigger: QuickPromptRequest | null;
 
   /* ----------------------- throttled summary ------------------------- */
   summary: ClusterSummary;
@@ -361,6 +364,12 @@ export interface ClusterStoreState {
 
   /** Select an entity. Pass both fields as null to clear the selection. */
   selectEntity: (id: string | null, type: EntityType | null) => void;
+  /**
+   * Select an entity and arm a camera flight even when that entity is already
+   * selected. The canvas watches `cameraFocusNonce`, because a same-id click
+   * would otherwise leave the rig where the operator dragged it.
+   */
+  focusEntity: (id: string, type: EntityType) => void;
   /** Clear the selection. */
   clearSelection: () => void;
   /** Toggle demo/live data source. */
@@ -391,7 +400,7 @@ export interface ClusterStoreState {
   appendTerminalLogs: (lines: readonly string[]) => void;
   /** Clear the terminal buffer. */
   clearTerminalLogs: () => void;
-  /** Queue an AI quick-diagnosis prompt. */
+  /** Queue a diagnosis. A new id is minted on every call, even when the text repeats. */
   triggerQuickPrompt: (prompt: string) => void;
   /** Consume the queued prompt (called by the copilot once it has dispatched). */
   consumeQuickPrompt: () => void;
@@ -413,9 +422,13 @@ export interface ClusterStoreState {
    Store implementation
    ========================================================================== */
 
+/** Survives identical prompt text so the drawer cannot miss a second click. */
+let quickPromptSequence = 0;
+
 const initialState = {
   selectedEntityId: null as string | null,
   selectedEntityType: null as EntityType | null,
+  cameraFocusNonce: 0,
   connectionMode: 'demo' as ConnectionMode,
   activeChaos: 'NONE' as ChaosScenario,
   isChaosModalOpen: false,
@@ -439,7 +452,7 @@ const initialState = {
       BOOT_TIMESTAMP,
     ),
   ] as string[],
-  quickPromptTrigger: null as string | null,
+  quickPromptTrigger: null as QuickPromptRequest | null,
   summary: buildInitialSummary(),
   lastSummarySyncMs: Number.NEGATIVE_INFINITY,
 };
@@ -456,6 +469,15 @@ export const useClusterStore = create<ClusterStoreState>((set, get) => ({
     });
     /* Selection is a user-driven event: bypass the throttle so the inspector
        paints immediately instead of up to 1 s late. */
+    get().syncSummary(performance.now(), true);
+  },
+
+  focusEntity: (id, type) => {
+    set((state) => ({
+      selectedEntityId: id,
+      selectedEntityType: type,
+      cameraFocusNonce: state.cameraFocusNonce + 1,
+    }));
     get().syncSummary(performance.now(), true);
   },
 
@@ -613,10 +635,8 @@ export const useClusterStore = create<ClusterStoreState>((set, get) => ({
     if (trimmed.length === 0) {
       return;
     }
-    /* The trigger is a REQUEST token, not a boolean: storing the prompt text
-       lets the copilot hook detect a new dispatch by reference inequality even
-       when the operator re-runs the same preset twice. */
-    set({ quickPromptTrigger: trimmed });
+    quickPromptSequence += 1;
+    set({ quickPromptTrigger: { id: quickPromptSequence, prompt: trimmed } });
     get().appendTerminalLog(
       formatChannelLogLine(
         'COPILOT',
@@ -703,8 +723,8 @@ export function useChaosModalOpen(): boolean {
   return useClusterStore((state) => state.isChaosModalOpen);
 }
 
-/** Queued AI prompt, or null when idle. */
-export function useQuickPromptTrigger(): string | null {
+/** Queued AI prompt, or null once the drawer has taken it. */
+export function useQuickPromptTrigger(): QuickPromptRequest | null {
   return useClusterStore((state) => state.quickPromptTrigger);
 }
 

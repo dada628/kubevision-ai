@@ -1,7 +1,6 @@
 'use client';
 
-import type { ReactElement } from 'react';
-import { CopilotPanel } from '@/components/ai/CopilotPanel';
+import type { ReactElement, ReactNode } from 'react';
 import { ShellLayout } from './ShellLayout';
 import { TopologyViewport } from '@/components/canvas/TopologyViewport';
 import { ChaosControlModal } from '@/components/hud/ChaosControlModal';
@@ -30,14 +29,17 @@ import { useTelemetryStream } from '@/hooks/useTelemetryStream';
  * `<Canvas>`, and this file injects it as the shell's `viewportSlot`. The effect
  * is the one required by `.cursorrules` rule 4: `three` never enters the RSC or
  * server module graph, and the viewport still streams in with a skeleton.
+ *
+ * The right-hand copilot is passed in from `page.tsx` so the page owns which
+ * drawer fills `copilotSlot`.
  */
-export function DashboardShell(): ReactElement {
+export function DashboardShell({ copilotSlot }: { readonly copilotSlot?: ReactNode }): ReactElement {
   useHudSync();
   useTelemetryStream();
 
   return (
     <>
-      <ShellLayout viewportSlot={<TopologyViewport />} copilotSlot={<CopilotPanel />} />
+      <ShellLayout viewportSlot={<TopologyViewport />} copilotSlot={copilotSlot} />
       {/*
         The chaos drill modal is a SIBLING of the shell, not a child of the
         viewport or the top bar. It is `position: fixed` and needs to cover the

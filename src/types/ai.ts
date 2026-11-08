@@ -89,6 +89,11 @@ export interface PodMetricsCardProps {
   readonly narrative: string;
   /** True when the copilot flagged this pod as needing operator attention. */
   readonly atRisk: boolean;
+  /**
+   * Focus this pod in the 3D viewport. The card title calls it when the
+   * operator clicks the pod name. Omitted outside the copilot drawer.
+   */
+  readonly onFocusPod?: (podId: string) => void;
 }
 
 /**
@@ -158,6 +163,11 @@ export interface RootCauseAlertProps {
   readonly detectedAt: IsoTimestamp;
   /** Affected object ids (`PodEntity.id` / `WorkerNodeEntity.id`). */
   readonly affectedIds: string[];
+  /**
+   * Focus a pod named in the headline. The title turns matching pod names
+   * into buttons when this is set.
+   */
+  readonly onFocusPod?: (podId: string) => void;
 }
 
 /** Mutation kinds the copilot is allowed to request. */
@@ -215,6 +225,11 @@ export interface ActionConfirmProps {
   readonly impactDescription: string;
   /** Populated when `executionState === 'failed'`. Plain text. */
   readonly errorMessage?: string;
+  /**
+   * Focus the pod this action refers to. Restart targets that pod directly;
+   * a scale target resolves to one of its replicas. Drain stays a node.
+   */
+  readonly onFocusPod?: (podId: string) => void;
 }
 
 /**

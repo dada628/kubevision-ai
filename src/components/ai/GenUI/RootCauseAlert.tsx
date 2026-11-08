@@ -9,7 +9,7 @@
  * ordering.
  */
 
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { GitBranch, ShieldAlert } from 'lucide-react';
 import type {
   EvidenceItem,
@@ -17,6 +17,7 @@ import type {
   RootCauseAlertProps,
 } from '@/types/ai';
 import type { IncidentSeverity } from '@/types/cluster';
+import { getSnapshot } from '@/store/useTelemetryRef';
 
 interface SeverityTone {
   readonly label: string;
@@ -97,6 +98,66 @@ interface ChainNode {
   readonly origin: number;
 }
 
+function focusableTitle(
+  title: string,
+  onFocusPod: ((podId: string) => void) | undefined,
+): ReactNode {
+  if (onFocusPod === undefined) {
+    return title;
+  }
+  const labels: { id: string; label: string }[] = [];
+  for (const pod of getSnapshot().pods) {
+    const label = pod.name.length > 0 ? pod.name : pod.id;
+    if (label.length >= 4 && title.includes(label)) {
+      labels.push({ id: pod.id, label });
+    }
+  }
+  labels.sort((left, right) => right.label.length - left.label.length);
+  if (labels.length === 0) {
+    return title;
+  }
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let guard = 0;
+  while (cursor < title.length && guard < title.length) {
+    guard += 1;
+    let found: { id: string; label: string } | null = null;
+    for (const entry of labels) {
+      if (title.startsWith(entry.label, cursor)) {
+        found = entry;
+        break;
+      }
+    }
+    if (found === null) {
+      let next = title.length;
+      for (const entry of labels) {
+        const at = title.indexOf(entry.label, cursor + 1);
+        if (at >= 0 && at < next) {
+          next = at;
+        }
+      }
+      nodes.push(title.slice(cursor, next));
+      cursor = next;
+      continue;
+    }
+    const target = found;
+    const start = cursor;
+    nodes.push(
+      <button
+        key={`${target.id}-${start}`}
+        type="button"
+        aria-label={`在三维场景中聚焦 ${target.label}`}
+        onClick={() => onFocusPod(target.id)}
+        className="inline-flex min-h-11 items-center rounded-sm text-left text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 outline-none ring-cyan-400 hover:text-cyan-200 focus-visible:ring-2"
+      >
+        {target.label}
+      </button>,
+    );
+    cursor += target.label.length;
+  }
+  return nodes;
+}
+
 export function RootCauseAlert(props: RootCauseAlertProps): ReactElement {
   const {
     incidentId,
@@ -108,6 +169,7 @@ export function RootCauseAlert(props: RootCauseAlertProps): ReactElement {
     confidence,
     detectedAt,
     affectedIds,
+    onFocusPod,
   } = props;
 
   const tone = presentSeverity(severity);
@@ -171,7 +233,7 @@ export function RootCauseAlert(props: RootCauseAlertProps): ReactElement {
             <span className="font-mono text-sm tabular-nums text-cyan-300">{confidencePct}%</span>
           </p>
         </div>
-        <h3 className="text-sm font-semibold leading-6 text-slate-100">{title}</h3>
+        <h3 className="text-sm font-semibold leading-6 text-slate-100">{focusableTitle(title, onFocusPod)}</h3>
         <p className="text-sm leading-6 text-slate-300">{rootCauseSummary}</p>
         <p className="font-mono text-xs text-slate-400">
           检出 {clockLabel(detectedAt)}

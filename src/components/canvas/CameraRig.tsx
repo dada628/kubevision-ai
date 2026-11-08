@@ -44,6 +44,7 @@ import { OrbitControls } from '@react-three/drei';
 import { Vector3 } from 'three';
 import type { EntityType } from '@/types/store';
 import {
+  useClusterStore,
   useSelectedEntityId,
   useSelectedEntityType,
 } from '@/store/useClusterStore';
@@ -134,6 +135,7 @@ export function CameraRig(): ReactElement {
   /* Discrete subscriptions only: these fire on click, never per frame. */
   const selectedEntityId = useSelectedEntityId();
   const selectedEntityType = useSelectedEntityType();
+  const cameraFocusNonce = useClusterStore((state) => state.cameraFocusNonce);
 
   /**
    * All scratch vectors are allocated once for the component lifetime.
@@ -152,6 +154,7 @@ export function CameraRig(): ReactElement {
      every frame would allocate on the frame path, which rule 3 forbids. */
   const lastIdRef = useRef<string | null>(null);
   const lastTypeRef = useRef<EntityType | null>(null);
+  const lastFocusNonceRef = useRef<number>(0);
   /** Distinguishes "never aimed" from "aimed at nothing / overview". */
   const hasAimedRef = useRef<boolean>(false);
   /** The operator's auto-rotation preference, separate from the live controls. */
@@ -339,11 +342,13 @@ export function CameraRig(): ReactElement {
     if (
       !hasAimedRef.current ||
       lastIdRef.current !== selectedEntityId ||
-      lastTypeRef.current !== selectedEntityType
+      lastTypeRef.current !== selectedEntityType ||
+      lastFocusNonceRef.current !== cameraFocusNonce
     ) {
       hasAimedRef.current = true;
       lastIdRef.current = selectedEntityId;
       lastTypeRef.current = selectedEntityType;
+      lastFocusNonceRef.current = cameraFocusNonce;
       aimAtSelection(selectedEntityId, selectedEntityType);
     }
 

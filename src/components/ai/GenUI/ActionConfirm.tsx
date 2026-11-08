@@ -123,6 +123,35 @@ function dispatchHeal(targetId: string, actionType: ConfirmableActionType): bool
   return replicas.every((replicaId) => podRecovered(replicaId));
 }
 
+function podNamedByAction(
+  actionType: ConfirmableActionType,
+  targetId: string,
+  targetLabel: string,
+): { id: string; name: string } | null {
+  const pods = getSnapshot().pods;
+  if (actionType === 'restart_pod') {
+    const exact = pods.find(
+      (pod) => pod.id === targetId || pod.name === targetId || pod.name === targetLabel,
+    );
+    if (exact !== undefined) {
+      return { id: exact.id, name: exact.name };
+    }
+    return { id: targetId, name: targetLabel };
+  }
+  if (actionType === 'scale_deployment') {
+    const prefix = `${targetId}-`;
+    const replica = pods.find(
+      (pod) =>
+        pod.id === targetId ||
+        pod.name === targetId ||
+        pod.name === targetLabel ||
+        pod.name.startsWith(prefix),
+    );
+    return replica === undefined ? null : { id: replica.id, name: replica.name };
+  }
+  return null;
+}
+
 export function ActionConfirm(props: ActionConfirmProps): ReactElement {
   const {
     requestId,
@@ -134,6 +163,7 @@ export function ActionConfirm(props: ActionConfirmProps): ReactElement {
     desiredReplicas,
     impactDescription,
     errorMessage,
+    onFocusPod,
   } = props;
 
   const checkboxId = useId();
@@ -176,6 +206,7 @@ export function ActionConfirm(props: ActionConfirmProps): ReactElement {
   const riskBlocked = riskRequired && !riskAck;
   const canExecute = (phase === 'ready' || phase === 'failed') && !riskBlocked;
   const shownError = phase === 'failed' ? (localFailure ?? errorMessage ?? null) : null;
+  const namedPod = podNamedByAction(actionType, targetId, targetLabel);
 
   const execute = (): void => {
     if (!canExecute) {
@@ -194,7 +225,20 @@ export function ActionConfirm(props: ActionConfirmProps): ReactElement {
             <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
             kube-api confirm
           </p>
-          <h3 className="mt-1 truncate text-sm font-semibold text-slate-100">{meta.title}</h3>
+          <h3 className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-sm font-semibold text-slate-100">
+            <span className="truncate">{meta.title}</span>
+            {namedPod !== null && onFocusPod !== undefined ? (
+              <button
+                type="button"
+                title={namedPod.name}
+                aria-label={`在三维场景中聚焦 ${namedPod.name}`}
+                onClick={() => onFocusPod(namedPod.id)}
+                className="inline-flex min-h-11 max-w-full items-center truncate rounded-sm font-mono text-sm font-semibold text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 outline-none ring-cyan-400 hover:text-cyan-200 focus-visible:ring-2"
+              >
+                {namedPod.name}
+              </button>
+            ) : null}
+          </h3>
           <p className="mt-0.5 font-mono text-xs text-slate-400">{requestId}</p>
         </div>
         <span className="shrink-0 rounded-full border border-slate-700 px-2 py-1 font-mono text-xs uppercase tracking-widest text-slate-300">
@@ -230,8 +274,19 @@ export function ActionConfirm(props: ActionConfirmProps): ReactElement {
 
         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-sm">
           <dt className="text-slate-400">目标</dt>
-          <dd className="truncate font-mono text-slate-100" title={targetLabel}>
-            {targetLabel}
+          <dd className="min-w-0 font-mono text-slate-100" title={targetLabel}>
+            {namedPod !== null && onFocusPod !== undefined ? (
+              <button
+                type="button"
+                aria-label={`在三维场景中聚焦 ${namedPod.name}`}
+                onClick={() => onFocusPod(namedPod.id)}
+                className="inline-flex min-h-11 max-w-full items-center truncate rounded-sm text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 outline-none ring-cyan-400 hover:text-cyan-200 focus-visible:ring-2"
+              >
+                {targetLabel}
+              </button>
+            ) : (
+              <span className="block truncate">{targetLabel}</span>
+            )}
           </dd>
           <dt className="text-slate-400">对象 ID</dt>
           <dd className="truncate font-mono text-xs text-cyan-300" title={targetId}>

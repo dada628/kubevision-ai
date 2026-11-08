@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactElement } from 'react';
+import { CopilotDrawer } from '@/components/ai/CopilotDrawer';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 
 export const metadata: Metadata = {
@@ -15,10 +16,10 @@ export const metadata: Metadata = {
  * child. All interactive state lives inside `DashboardShell` and below, so this
  * file can never accidentally pull Zustand or three into the RSC graph.
  *
- * The shell itself locks the document to `100dvh` with `overflow-hidden`, so no
- * `min-h-screen` wrapper is needed here - adding one would reintroduce the
- * page-level scrollbar the layout is built to avoid.
+ * The copilot drawer is created here and handed to the shell's right slot.
+ * The page stays a Server Component: the drawer is a client module, so Zustand
+ * and the chat hook never enter this file's own module graph.
  */
 export default function HomePage(): ReactElement {
-  return <DashboardShell />;
+  return <DashboardShell copilotSlot={<CopilotDrawer />} />;
 }

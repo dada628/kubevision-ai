@@ -450,23 +450,15 @@ function InspectProbe({ entityType, pod, node }: ProbeProps): ReactElement {
     if (entityId.length === 0) {
       return;
     }
-    /* The copilot hook watches `quickPromptTrigger` for reference inequality, so a
-       freshly built string is what wakes it - a boolean flag would be swallowed on
-       the second identical request. */
     const kind = entityType === 'pod' ? 'Pod' : 'Node';
     const statusText = pod !== null ? pod.status : node !== null ? node.status : 'unknown';
-    const cpuText = pod !== null ? `CPU ${pod.cpuUsage.toFixed(1)}%` : '';
+    const loadText =
+      pod !== null
+        ? `CPU ${pod.cpuUsage.toFixed(1)}%，内存 ${pod.memoryUsage.toFixed(1)}%。`
+        : '';
+    const restartText = restarts !== null ? `重启 ${restarts} 次。` : '';
     triggerQuickPrompt(
-      [
-        `请对 ${kind} ${name} 发起专项根因诊断。`,
-        `ID: ${entityId};`,
-        `状态: ${statusText};`,
-        cpuText.length > 0 ? `${cpuText};` : '',
-        restarts !== null ? `重启次数: ${restarts};` : '',
-        '请结合最近的遥测走势与告警给出可执行的处置建议。',
-      ]
-        .filter((part) => part.length > 0)
-        .join(' '),
+      `请对${kind} ${name}（ID: ${entityId}）做深度根因诊断。状态: ${statusText}。${loadText}${restartText}请给出该实体的实时指标、根因证据链，以及需要人工确认的自愈指令。`,
     );
   }, [entityId, entityType, name, node, pod, restarts, triggerQuickPrompt]);
 

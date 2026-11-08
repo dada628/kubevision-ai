@@ -230,6 +230,7 @@ export function PodMetricsCard(props: PodMetricsCardProps): ReactElement {
     memHistory,
     narrative,
     atRisk,
+    onFocusPod,
   } = props;
 
   const rawId = useId().replace(/:/g, '');
@@ -334,9 +335,23 @@ export function PodMetricsCard(props: PodMetricsCardProps): ReactElement {
             <Activity className="h-3.5 w-3.5" aria-hidden />
             pod telemetry
           </p>
-          <h3 className="mt-1 truncate text-sm font-semibold text-slate-100" title={podName}>
-            {podName}
-          </h3>
+          {onFocusPod === undefined ? (
+            <h3 className="mt-1 truncate text-sm font-semibold text-slate-100" title={podName}>
+              {podName}
+            </h3>
+          ) : (
+            <h3 className="mt-1 truncate text-sm font-semibold text-slate-100">
+              <button
+                type="button"
+                title={podName}
+                aria-label={`在三维场景中聚焦 ${podName}`}
+                onClick={() => onFocusPod(podId)}
+                className="inline-flex min-h-11 max-w-full items-center truncate rounded-sm text-left text-cyan-300 underline decoration-cyan-400/40 underline-offset-4 outline-none ring-cyan-400 hover:text-cyan-200 focus-visible:ring-2"
+              >
+                {podName}
+              </button>
+            </h3>
+          )}
           <p className="mt-0.5 truncate font-mono text-xs text-slate-400">
             {namespace}
             <span className="px-1 text-slate-600">/</span>
