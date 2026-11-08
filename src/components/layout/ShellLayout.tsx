@@ -152,8 +152,9 @@ export function ShellLayout({
             </span>
           </div>
 
-          {/* The drawer is the one internal pane allowed to scroll. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 lg:p-3">
+          {/* Height is fixed here. The transcript inside the drawer is the only scroller,
+              so a growing card cannot chain into this column or the document. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain p-2 lg:p-3">
             {copilotSlot ?? (
               <SlotPlaceholder
                 title="ai copilot drawer"

@@ -294,6 +294,17 @@ export interface QuickPromptRequest {
   readonly prompt: string;
 }
 
+/**
+ * System line the copilot appends after a confirmed self-heal.
+ *
+ * Kept off the prompt string for the same reason as `QuickPromptRequest`:
+ * two heals of the same pod must both reach the chat.
+ */
+export interface HealReceipt {
+  readonly id: number;
+  readonly summary: string;
+}
+
 export const CHAOS_SCENARIO_META: readonly ChaosScenarioMeta[] = [
   {
     scenario: 'NONE',

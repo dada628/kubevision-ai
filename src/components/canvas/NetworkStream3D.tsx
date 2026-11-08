@@ -51,6 +51,7 @@ import {
   readNodeNetTarget,
 } from '@/store/useTelemetryRef';
 import { readRackFault } from './faultState';
+import { sampleHealFlow } from './healFlowBus';
 import {
   MASTER_POSITION,
   RACK_HEIGHT,
@@ -116,6 +117,11 @@ const PACKET_BUSY_COLOR = new Color('#a5f3fc');
 /** Packet glow - faulted: amber-hot ember, ramping to pale warning orange. */
 const PACKET_ALERT_COLOR = new Color('#f97316');
 const PACKET_ALERT_BUSY_COLOR = new Color('#fecaca');
+
+/** Packet glow while a heal surge is running: emerald, hot at the leading edge. */
+const PACKET_HEAL_COLOR = new Color('#34d399');
+const PACKET_HEAL_HOT_COLOR = new Color('#a7f3d0');
+const CABLE_HEAL_COLOR = new Color('#34d399');
 
 const CABLE_OPACITY = 0.22;
 
@@ -295,6 +301,7 @@ export function NetworkStream3D(): ReactElement {
     const dt = Math.min(Math.max(delta, 0), 0.1);
     const elapsed = state.clock.elapsedTime;
     const snapshot = getSnapshot();
+    const heal = sampleHealFlow(dt);
 
     /* Whether the rack-specific network context has changed. */
     for (let cable = 0; cable < CABLES.length; cable += 1) {
@@ -351,16 +358,23 @@ export function NetworkStream3D(): ReactElement {
          packets to a new cadence the instant a pod crashes. */
       const faultSpeed =
         healthySpeed * (FAULT_SPEED_FACTOR + (1 - FAULT_SPEED_FACTOR) * (1 - severity));
+      const healing = heal !== null && heal.rack === rackIndex;
+      const healStrength = healing && heal !== null ? heal.strength : 0;
 
       /* Duty-cycle gate: `burst` is 1 while the cable is moving, 0 while stalled.
          `fract` gives a hard on/off, which is exactly the "卡顿" read we want - a
          smooth sine would look like a pulsing throttle, not a dropped link. */
       const stutterPhase = (elapsed / STUTTER_PERIOD) % 1;
       const inBurst = stutterPhase < STUTTER_DUTY;
-      /* Blend the gate with severity so a healthy cable is never gated at all. */
-      const burst = severity <= 0.001 ? 1 : inBurst ? 1 : 1 - severity;
+      /* Blend the gate with severity so a healthy cable is never gated at all.
+         A heal surge ignores the stall: the link has just been restored. */
+      const burst = healStrength > 0 || severity <= 0.001 ? 1 : inBurst ? 1 : 1 - severity;
 
-      let phase = (phases[cable] ?? 0) + faultSpeed * burst * dt;
+      const travelSpeed =
+        healStrength > 0
+          ? healthySpeed * (1 + 2.8 * healStrength)
+          : faultSpeed * burst;
+      let phase = (phases[cable] ?? 0) + travelSpeed * dt;
       /* `% 1` on a positive value: the phase is the only state that grows without
          bound, so wrapping it here keeps float precision intact for hours. */
       phase -= Math.floor(phase);
@@ -377,6 +391,9 @@ export function NetworkStream3D(): ReactElement {
           CABLE_ALERT_COLOR_VALUE,
           severity,
         );
+        if (healStrength > 0) {
+          material.color.lerp(CABLE_HEAL_COLOR, healStrength);
+        }
         material.opacity =
           CABLE_OPACITY + (CABLE_ALERT_OPACITY - CABLE_OPACITY) * severity;
       }
@@ -409,7 +426,8 @@ export function NetworkStream3D(): ReactElement {
 
         const scale =
           (calmBreath * nervousJitter * stallDim) *
-          (1 + (PACKET_ALERT_SIZE_BOOST - 1) * severity);
+          (1 + (PACKET_ALERT_SIZE_BOOST - 1) * severity) *
+          (1 + 0.45 * healStrength);
 
         tempObject.position.copy(tempVec);
         tempObject.scale.setScalar(scale);
@@ -421,6 +439,10 @@ export function NetworkStream3D(): ReactElement {
         tempColor.copy(PACKET_IDLE_COLOR).lerp(PACKET_BUSY_COLOR, easedFlow);
         alertColor.copy(PACKET_ALERT_COLOR).lerp(PACKET_ALERT_BUSY_COLOR, easedFlow);
         tempColor.lerp(alertColor, severity);
+        if (healStrength > 0) {
+          alertColor.copy(PACKET_HEAL_COLOR).lerp(PACKET_HEAL_HOT_COLOR, easedFlow);
+          tempColor.lerp(alertColor, healStrength);
+        }
 
         /* Brightness falls off at the endpoints so packets appear to be emitted by
            the master and absorbed by the kubelet rather than popping in and out. */

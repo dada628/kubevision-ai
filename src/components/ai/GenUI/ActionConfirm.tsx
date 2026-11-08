@@ -19,6 +19,9 @@ import {
 } from '@/types/ai';
 import { useClusterStore } from '@/store/useClusterStore';
 import { getSnapshot, HEAL_CPU_CEILING } from '@/store/useTelemetryRef';
+import { requestRackFocus } from '@/components/canvas/cameraCommandBus';
+import { requestHealFlow } from '@/components/canvas/healFlowBus';
+import type { RackIndex } from '@/types/cluster';
 
 const HEAL_STREAM_MS = 800;
 
@@ -152,6 +155,65 @@ function podNamedByAction(
   return null;
 }
 
+function resolveHealRack(
+  targetId: string,
+  actionType: ConfirmableActionType,
+): { readonly index: RackIndex; readonly name: string } | null {
+  const snapshot = getSnapshot();
+  if (actionType === 'drain_node') {
+    const node = snapshot.nodes.find((item) => item.id === targetId);
+    return node === undefined ? null : { index: node.rackIndex, name: node.name };
+  }
+  const podId =
+    actionType === 'restart_pod' ? targetId : (resolveScaleTargets(targetId)[0] ?? targetId);
+  const pod = snapshot.pods.find((item) => item.id === podId || item.name === podId);
+  if (pod === undefined) {
+    return null;
+  }
+  const node = snapshot.nodes.find((item) => item.id === pod.nodeId);
+  return node === undefined ? null : { index: node.rackIndex, name: node.name };
+}
+
+function relatchHealed(targetId: string, actionType: ConfirmableActionType): void {
+  const heal = useClusterStore.getState().healEntity;
+  if (actionType === 'scale_deployment') {
+    const replicas = resolveScaleTargets(targetId);
+    const ids = replicas.length > 0 ? replicas : [targetId];
+    for (const replicaId of ids) {
+      heal(replicaId, actionType);
+    }
+    return;
+  }
+  heal(targetId, actionType);
+}
+
+/**
+ * After the live pool confirms the heal: drop an active drill, fly the camera
+ * to that rack, surge its packets emerald, and hand the copilot a system line.
+ */
+function acknowledgeHeal(
+  targetId: string,
+  actionType: ConfirmableActionType,
+  targetLabel: string,
+): void {
+  const store = useClusterStore.getState();
+  const clearedChaos = store.activeChaos !== 'NONE';
+  if (clearedChaos) {
+    store.triggerChaos('NONE');
+    relatchHealed(targetId, actionType);
+  }
+  const rack = resolveHealRack(targetId, actionType);
+  if (rack !== null) {
+    requestRackFocus(rack.index);
+    requestHealFlow(rack.index);
+  }
+  const rackName = rack?.name ?? '目标机架';
+  const chaosSentence = clearedChaos ? '混沌演练已解除。' : '';
+  store.noteHealVerified(
+    `自愈验证通过：${actionType} 已恢复 ${targetLabel}。相机已对准 ${rackName}，该机架周围的链路粒子短暂转为翠绿并加速流动。${chaosSentence}`,
+  );
+}
+
 export function ActionConfirm(props: ActionConfirmProps): ReactElement {
   const {
     requestId,
@@ -191,6 +253,7 @@ export function ActionConfirm(props: ActionConfirmProps): ReactElement {
     const timer = window.setTimeout(() => {
       const ok = dispatchHeal(targetId, actionType);
       if (ok) {
+        acknowledgeHeal(targetId, actionType, targetLabel);
         setLocalFailure(null);
         setPhase('locked');
         return;

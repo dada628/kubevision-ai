@@ -46,6 +46,7 @@ import type {
   ParsedTerminalLogLine,
   PodStatusFilter,
   QuickPromptRequest,
+  HealReceipt,
   SelectedEntitySnapshot,
   TerminalLogChannel,
 } from '@/types/store';
@@ -353,6 +354,8 @@ export interface ClusterStoreState {
 
   /* --------------------------- AI copilot ---------------------------- */
   quickPromptTrigger: QuickPromptRequest | null;
+  /** Latest verified self-heal, consumed by the copilot once it is on screen. */
+  healReceipt: HealReceipt | null;
 
   /* ----------------------- throttled summary ------------------------- */
   summary: ClusterSummary;
@@ -404,6 +407,10 @@ export interface ClusterStoreState {
   triggerQuickPrompt: (prompt: string) => void;
   /** Consume the queued prompt (called by the copilot once it has dispatched). */
   consumeQuickPrompt: () => void;
+  /** Publish a system verification line for the copilot transcript. */
+  noteHealVerified: (summary: string) => void;
+  /** Drop the receipt after the drawer has appended it. */
+  consumeHealReceipt: () => void;
   /**
    * Commit a fresh summary to React state.
    *
@@ -424,6 +431,8 @@ export interface ClusterStoreState {
 
 /** Survives identical prompt text so the drawer cannot miss a second click. */
 let quickPromptSequence = 0;
+/** Same idea for heal receipts: identical wording must still append. */
+let healReceiptSequence = 0;
 
 const initialState = {
   selectedEntityId: null as string | null,
@@ -453,6 +462,7 @@ const initialState = {
     ),
   ] as string[],
   quickPromptTrigger: null as QuickPromptRequest | null,
+  healReceipt: null as HealReceipt | null,
   summary: buildInitialSummary(),
   lastSummarySyncMs: Number.NEGATIVE_INFINITY,
 };
@@ -647,6 +657,17 @@ export const useClusterStore = create<ClusterStoreState>((set, get) => ({
   },
 
   consumeQuickPrompt: () => set({ quickPromptTrigger: null }),
+
+  noteHealVerified: (summary) => {
+    const trimmed = summary.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    healReceiptSequence += 1;
+    set({ healReceipt: { id: healReceiptSequence, summary: trimmed } });
+  },
+
+  consumeHealReceipt: () => set({ healReceipt: null }),
 
   /* ---------------------------- throttled sync --------------------------- */
 

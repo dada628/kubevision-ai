@@ -12,13 +12,13 @@
 
 import { useEffect, useRef, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { useChat, type Message } from 'ai/react';
-import { Eraser, Loader2, Lock, SendHorizontal, Square } from 'lucide-react';
+import { Eraser, Loader2, Lock, SendHorizontal, Square, TriangleAlert } from 'lucide-react';
 import { ActionConfirm } from '@/components/ai/GenUI/ActionConfirm';
 import { GenUISkeleton } from '@/components/ai/GenUI/GenUISkeleton';
 import { PodMetricsCard } from '@/components/ai/GenUI/PodMetricsCard';
 import { RootCauseAlert } from '@/components/ai/GenUI/RootCauseAlert';
 import { readChatClusterContext } from '@/components/ai/readChatClusterContext';
-import { useClusterStore, useClusterSummary } from '@/store/useClusterStore';
+import { useActiveChaos, useClusterStore, useClusterSummary } from '@/store/useClusterStore';
 import type { ActionConfirmProps, PodMetricsCardProps, RootCauseAlertProps } from '@/types/ai';
 
 const ACTION_CHIPS = [
@@ -32,6 +32,8 @@ const INPUT_MAX_PX = 144;
 
 /** Request ids already copied into the composer. Survives a strict-mode remount. */
 const handledQuickPromptIds = new Set<number>();
+/** Heal receipts already written into the transcript. */
+const handledHealReceiptIds = new Set<number>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -229,10 +231,19 @@ function MessageBody({
 }
 
 export function CopilotDrawer(): ReactElement {
-  const selected = useClusterSummary().selectedEntity;
+  const summary = useClusterSummary();
+  const selected = summary.selectedEntity;
+  const activeChaos = useActiveChaos();
+  const faultCount = summary.podStatusCounts.OOMKilled + summary.podStatusCounts.CrashLoopBackOff;
+  const chaosActive = activeChaos !== 'NONE';
+  const anomalyCount = faultCount > 0 ? faultCount : chaosActive ? Math.max(summary.abnormalPodCount, 1) : 0;
+  const showAnomaly = anomalyCount > 0;
+  const anomalyCritical = faultCount > 0;
   const quickPrompt = useClusterStore((state) => state.quickPromptTrigger);
   const consumeQuickPrompt = useClusterStore((state) => state.consumeQuickPrompt);
   const triggerQuickPrompt = useClusterStore((state) => state.triggerQuickPrompt);
+  const healReceipt = useClusterStore((state) => state.healReceipt);
+  const consumeHealReceipt = useClusterStore((state) => state.consumeHealReceipt);
   const focusEntity = useClusterStore((state) => state.focusEntity);
 
   const { messages, input, handleInputChange, handleSubmit, append, status, stop, error, setMessages, setInput } =
@@ -245,6 +256,8 @@ export function CopilotDrawer(): ReactElement {
     });
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = status === 'submitted' || status === 'streaming';
   const online = error === undefined;
@@ -270,12 +283,119 @@ export function CopilotDrawer(): ReactElement {
   }, [append, consumeQuickPrompt, quickPrompt, setInput, stop]);
 
   useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (scroller === null) {
+    if (healReceipt === null) {
       return;
     }
-    scroller.scrollTop = scroller.scrollHeight;
-  }, [messages, status]);
+    if (handledHealReceiptIds.has(healReceipt.id)) {
+      consumeHealReceipt();
+      return;
+    }
+    handledHealReceiptIds.add(healReceipt.id);
+    const summaryText = healReceipt.summary;
+    const receiptId = healReceipt.id;
+    consumeHealReceipt();
+    setMessages((current) => [
+      ...current,
+      {
+        id: `heal-receipt-${receiptId}`,
+        role: 'system',
+        content: summaryText,
+        createdAt: new Date(),
+      },
+    ]);
+  }, [consumeHealReceipt, healReceipt, setMessages]);
+
+  useEffect(() => {
+    if (status === 'submitted') {
+      pinnedToBottomRef.current = true;
+    }
+  }, [status]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const transcript = transcriptRef.current;
+    if (scroller === null || transcript === null) {
+      return;
+    }
+
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let frame = 0;
+    let lastTop = scroller.scrollTop;
+    let stalled = 0;
+
+    const distanceFromBottom = (): number =>
+      scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
+
+    const tick = (): void => {
+      if (!pinnedToBottomRef.current) {
+        frame = 0;
+        return;
+      }
+      const distance = distanceFromBottom();
+      if (distance <= 1) {
+        frame = 0;
+        stalled = 0;
+        lastTop = scroller.scrollTop;
+        return;
+      }
+      const moved = scroller.scrollTop !== lastTop;
+      lastTop = scroller.scrollTop;
+      const catchUp = motionQuery.matches || distance > 180 || stalled >= 2;
+      if (!moved || catchUp) {
+        const behavior: ScrollBehavior = catchUp ? 'auto' : 'smooth';
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+      }
+      stalled = moved ? 0 : stalled + 1;
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const scheduleAnchor = (): void => {
+      if (frame !== 0) {
+        return;
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const onWheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0) {
+        pinnedToBottomRef.current = false;
+        return;
+      }
+      if (distanceFromBottom() < 48) {
+        pinnedToBottomRef.current = true;
+        scheduleAnchor();
+      }
+    };
+
+    let touchY = 0;
+    const onTouchStart = (event: TouchEvent): void => {
+      touchY = event.touches[0]?.clientY ?? touchY;
+    };
+    const onTouchMove = (event: TouchEvent): void => {
+      const nextY = event.touches[0]?.clientY ?? touchY;
+      if (nextY > touchY + 8) {
+        pinnedToBottomRef.current = false;
+      }
+      touchY = nextY;
+    };
+
+    const observer = new ResizeObserver(scheduleAnchor);
+    observer.observe(transcript);
+    scroller.addEventListener('wheel', onWheel, { passive: true });
+    scroller.addEventListener('touchstart', onTouchStart, { passive: true });
+    scroller.addEventListener('touchmove', onTouchMove, { passive: true });
+    scheduleAnchor();
+
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('wheel', onWheel);
+      scroller.removeEventListener('touchstart', onTouchStart);
+      scroller.removeEventListener('touchmove', onTouchMove);
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const field = inputRef.current;
@@ -304,6 +424,12 @@ export function CopilotDrawer(): ReactElement {
     void append({ role: 'user', content: prompt });
   };
 
+  const launchAnomalyDiagnosis = (): void => {
+    triggerQuickPrompt(
+      '检测到容器实例异常，请立即启动 SRE 根因分析：给出异常 Pod 的实时指标、根因证据链，以及需要人工确认的自愈指令。',
+    );
+  };
+
   const diagnoseBound = (): void => {
     if (selected === null) {
       return;
@@ -323,8 +449,37 @@ export function CopilotDrawer(): ReactElement {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden" aria-label="KubeVision SRE Copilot">
+    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-label="KubeVision SRE Copilot">
       <header className="shrink-0 space-y-2 border-b border-slate-800 pb-3">
+        {showAnomaly ? (
+          <div
+            role="status"
+            className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${
+              anomalyCritical
+                ? 'animate-pulse-glow border-rose-500/60 bg-rose-500/15 shadow-glow-rose'
+                : 'animate-pulse-glow border-amber-400/60 bg-amber-400/15 shadow-glow-amber'
+            }`}
+          >
+            <TriangleAlert
+              className={`h-4 w-4 shrink-0 ${anomalyCritical ? 'text-rose-300' : 'text-amber-300'}`}
+              aria-hidden
+            />
+            <p className={`min-w-0 flex-1 text-sm leading-6 ${anomalyCritical ? 'text-rose-100' : 'text-amber-100'}`}>
+              ⚠️ 检测到 {anomalyCount} 个容器实例异常，是否立即启动 SRE 根因分析？
+            </p>
+            <button
+              type="button"
+              onClick={launchAnomalyDiagnosis}
+              className={`inline-flex min-h-11 shrink-0 items-center rounded-lg border px-3 text-sm font-medium outline-none ring-cyan-400 focus-visible:ring-2 ${
+                anomalyCritical
+                  ? 'border-rose-300/50 bg-rose-500/20 text-rose-50 hover:bg-rose-500/30'
+                  : 'border-amber-300/50 bg-amber-400/20 text-amber-50 hover:bg-amber-400/30'
+              }`}
+            >
+              一键启动诊断
+            </button>
+          </div>
+        ) : null}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold tracking-wide text-slate-100">KubeVision SRE Copilot</h2>
@@ -368,15 +523,28 @@ export function CopilotDrawer(): ReactElement {
 
       <div
         ref={scrollerRef}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain py-3"
-        aria-live="polite"
+        className="min-h-0 flex-1 overflow-y-auto overflow-anchor-none overscroll-contain py-3"
       >
+        <div ref={transcriptRef} className="flex flex-col gap-3" aria-live="polite">
         {messages.length === 0 ? (
           <p className="text-sm leading-6 text-slate-400">
             询问当前异常、根因或自愈动作。点上方青色标签，或点检查器里的「根因诊断」，都会带上当前绑定的实体。
           </p>
         ) : (
-          messages.map((message) => (
+          messages.map((message) => {
+            if (message.role === 'system') {
+              return (
+                <article
+                  key={message.id}
+                  role="status"
+                  className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 shadow-glow-emerald"
+                >
+                  <p className="font-mono text-xs uppercase tracking-widest text-emerald-300">系统 · 自愈验证</p>
+                  <p className="mt-1 text-sm leading-6 text-emerald-50">{message.content}</p>
+                </article>
+              );
+            }
+            return (
             <article
               key={message.id}
               className={
@@ -390,13 +558,15 @@ export function CopilotDrawer(): ReactElement {
               </p>
               <MessageBody message={message} onFocusPod={focusPod} />
             </article>
-          ))
+            );
+          })
         )}
         {error !== undefined ? (
           <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200" role="alert">
             对话请求失败：{error.message}
           </p>
         ) : null}
+        </div>
       </div>
 
       <form className="shrink-0 space-y-2 border-t border-slate-800 pt-3" onSubmit={onSubmit}>
