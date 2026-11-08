@@ -50,6 +50,7 @@ export {
 export type {
   ActionConfirmProps,
   ActionExecutionState,
+  ChatClusterContext,
   AuditHypothesis,
   ConfirmableActionType,
   EdgeAuditLabel,

@@ -16,12 +16,16 @@
  */
 
 import type {
+  ChaosScenario,
   IncidentSeverity,
   IsoTimestamp,
   Percentage,
+  PodEntity,
   PodStatus,
+  TelemetrySnapshot,
   UnitInterval,
 } from './cluster';
+import type { EntityType } from './store';
 
 /* ==========================================================================
    Shared AI primitives
@@ -357,4 +361,27 @@ export function isTerminalActionState(
   return (
     state === 'succeeded' || state === 'failed' || state === 'cancelled'
   );
+}
+
+/**
+ * Live scene attached to every `POST /api/chat` body.
+ *
+ * Read once at send time from `useClusterStore` and the telemetry pool. The
+ * route treats this as the only source of truth: a missing snapshot must not
+ * be replaced by a healthier guess when these fields are present.
+ */
+export interface ChatClusterContext {
+  /** `useClusterStore.selectedEntityId`. Null when the viewport has no selection. */
+  readonly selectedEntityId: string | null;
+  /** Kind of the selection, so a node id is not searched as a pod. */
+  readonly selectedEntityType: EntityType | null;
+  /** `useClusterStore.activeChaos` at the moment the message was sent. */
+  readonly activeChaos: ChaosScenario;
+  /**
+   * Pods that are not Running, or whose CPU or memory is above 80%.
+   * Detached copies of the live snapshot, not store summaries.
+   */
+  readonly abnormalPods: readonly PodEntity[];
+  /** Full live `TelemetrySnapshot`, including healthy pods, nodes and alerts. */
+  readonly snapshot: TelemetrySnapshot;
 }

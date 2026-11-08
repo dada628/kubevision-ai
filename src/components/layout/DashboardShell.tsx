@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactElement } from 'react';
+import { CopilotPanel } from '@/components/ai/CopilotPanel';
 import { ShellLayout } from './ShellLayout';
 import { TopologyViewport } from '@/components/canvas/TopologyViewport';
 import { ChaosControlModal } from '@/components/hud/ChaosControlModal';
@@ -36,7 +37,7 @@ export function DashboardShell(): ReactElement {
 
   return (
     <>
-      <ShellLayout viewportSlot={<TopologyViewport />} />
+      <ShellLayout viewportSlot={<TopologyViewport />} copilotSlot={<CopilotPanel />} />
       {/*
         The chaos drill modal is a SIBLING of the shell, not a child of the
         viewport or the top bar. It is `position: fixed` and needs to cover the
