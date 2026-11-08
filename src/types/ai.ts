@@ -363,6 +363,28 @@ export interface EdgeAuditResult {
  */
 export const EDGE_AUDIT_ACTION_THRESHOLD = 0.55;
 
+/**
+ * Hugging Face id of the on-device text classifier.
+ * Shared by the worker (the pipeline it loads) and the auditor panel (the
+ * name it prints). Kept here so the two cannot drift.
+ */
+export const EDGE_CLASSIFIER_MODEL_ID =
+  'Xenova/distilbert-base-uncased-finetuned-sst-2-english';
+
+/** Views the right-hand drawer can show without unmounting either one. */
+export const INSIGHT_DRAWER_TABS = ['copilot', 'auditor'] as const;
+
+export type InsightDrawerTab = (typeof INSIGHT_DRAWER_TABS)[number];
+
+/** Props for the on-device log privacy auditor. */
+export interface LocalAuditorPanelProps {
+  /**
+   * Bring the copilot tab forward. The caller keeps the copilot mounted, so
+   * a diagnosis posted just before this runs is still in the live session.
+   */
+  readonly onOpenCopilot: () => void;
+}
+
 /* ==========================================================================
    Edge classifier worker protocol
    ========================================================================== */
@@ -526,6 +548,94 @@ export function isEdgeClassifierCommand(
     typeof record.logEntryId === 'string' &&
     typeof record.text === 'string'
   );
+}
+
+export function isEdgeModelProgress(value: unknown): value is EdgeModelProgress {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as { percent?: unknown; status?: unknown; file?: unknown };
+  return (
+    typeof record.percent === 'number' &&
+    Number.isFinite(record.percent) &&
+    record.percent >= 0 &&
+    record.percent <= 100 &&
+    isEdgeModelProgressStatus(record.status) &&
+    (record.file === null || typeof record.file === 'string')
+  );
+}
+
+export function isEdgeAuditResult(value: unknown): value is EdgeAuditResult {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as {
+    label?: unknown;
+    confidence?: unknown;
+    inferenceMs?: unknown;
+    logEntryId?: unknown;
+    belowThreshold?: unknown;
+  };
+  return (
+    isEdgeAuditLabel(record.label) &&
+    typeof record.confidence === 'number' &&
+    Number.isFinite(record.confidence) &&
+    record.confidence >= 0 &&
+    record.confidence <= 1 &&
+    typeof record.inferenceMs === 'number' &&
+    Number.isFinite(record.inferenceMs) &&
+    record.inferenceMs >= 0 &&
+    typeof record.logEntryId === 'string' &&
+    typeof record.belowThreshold === 'boolean'
+  );
+}
+
+/** Narrow a `MessageEvent.data` payload to the worker protocol. */
+export function isEdgeClassifierEvent(value: unknown): value is EdgeClassifierEvent {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as {
+    type?: unknown;
+    progress?: unknown;
+    engine?: unknown;
+    percent?: unknown;
+    webGpuAvailable?: unknown;
+    executionProvider?: unknown;
+    sanitized?: unknown;
+    maskedCount?: unknown;
+    result?: unknown;
+    message?: unknown;
+    logEntryId?: unknown;
+  };
+  if (record.type === 'progress') {
+    return isEdgeModelProgress(record.progress);
+  }
+  if (record.type === 'ready') {
+    return (
+      isEdgeClassifierEngine(record.engine) &&
+      record.percent === 100 &&
+      typeof record.webGpuAvailable === 'boolean' &&
+      record.executionProvider === 'wasm'
+    );
+  }
+  if (record.type === 'audit') {
+    return (
+      isEdgeClassifierEngine(record.engine) &&
+      typeof record.sanitized === 'string' &&
+      typeof record.maskedCount === 'number' &&
+      Number.isInteger(record.maskedCount) &&
+      record.maskedCount >= 0 &&
+      isEdgeAuditResult(record.result)
+    );
+  }
+  if (record.type === 'fault') {
+    return (
+      typeof record.message === 'string' &&
+      (typeof record.logEntryId === 'string' || record.logEntryId === null)
+    );
+  }
+  return false;
 }
 
 /** True when the action has reached a state where no further transition occurs. */

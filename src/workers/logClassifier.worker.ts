@@ -27,7 +27,7 @@
  *   new Worker(new URL('../workers/logClassifier.worker.ts', import.meta.url), { type: 'module' })
  */
 
-import { EDGE_AUDIT_ACTION_THRESHOLD } from '@/types/ai';
+import { EDGE_AUDIT_ACTION_THRESHOLD, EDGE_CLASSIFIER_MODEL_ID } from '@/types/ai';
 import type {
   EdgeAuditResult,
   EdgeClassifierEvent,
@@ -44,7 +44,6 @@ import {
 import type { PolarityScores } from '@/utils/edgeVectorClassifier';
 import { sanitizeRawLog } from '@/utils/logSanitizer';
 
-const MODEL_ID = 'Xenova/distilbert-base-uncased-finetuned-sst-2-english';
 const LOAD_TIMEOUT_MS = 45_000;
 const FIRST_INFERENCE_BUDGET_MS = 6_000;
 const INFERENCE_BUDGET_MS = 2_500;
@@ -441,7 +440,7 @@ async function createClassifier(): Promise<TextClassifyFn> {
   configureEnv(transformers.env);
   const classifier = await transformers.pipeline(
     'text-classification',
-    MODEL_ID,
+    EDGE_CLASSIFIER_MODEL_ID,
     {
       quantized: true,
       progress_callback: (update: unknown) => {

@@ -144,7 +144,7 @@ export function ShellLayout({
           <div className="flex h-8 shrink-0 items-center justify-between border-b border-slate-800/60 px-3">
             <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-ultra-wide text-slate-400">
               <Sparkles className="h-3.5 w-3.5 text-cyan-400" aria-hidden />
-              ai copilot
+              insight
             </span>
             <span className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-widest text-slate-600">
               <Layers className="h-3 w-3" aria-hidden />

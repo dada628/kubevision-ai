@@ -79,6 +79,8 @@ export type {
   EdgeProgressEvent,
   EdgeReadyEvent,
   EdgeWarmupRequest,
+  InsightDrawerTab,
+  LocalAuditorPanelProps,
 } from './ai';
 
 export {
@@ -90,13 +92,18 @@ export {
   RECOMMENDED_ACTION_KINDS,
   EDGE_AUDIT_ACTION_THRESHOLD,
   EDGE_CLASSIFIER_ENGINES,
+  EDGE_CLASSIFIER_MODEL_ID,
   EDGE_MODEL_PROGRESS_STATUSES,
+  INSIGHT_DRAWER_TABS,
   REDACTION_MARKERS,
   isActionExecutionState,
   isConfirmableActionType,
   isEdgeAuditLabel,
+  isEdgeAuditResult,
   isEdgeClassifierCommand,
   isEdgeClassifierEngine,
+  isEdgeClassifierEvent,
+  isEdgeModelProgress,
   isEdgeModelProgressStatus,
   isMetricTone,
   isMetricTrend,
