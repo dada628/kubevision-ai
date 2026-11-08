@@ -376,7 +376,6 @@ export function PodInstancedMesh({
       ),
     [],
   );
-  useEffect(() => () => geometry.dispose(), [geometry]);
 
   /** Per-slot render state, allocated once. */
   const slots = useMemo<SlotRuntime[]>(
@@ -621,10 +620,19 @@ export function PodInstancedMesh({
   /* Attach the glow attribute to the geometry the mesh actually renders. */
   useEffect(() => {
     geometry.setAttribute(GLOW_ATTRIBUTE, glowAttribute);
-    return () => {
-      geometry.deleteAttribute(GLOW_ATTRIBUTE);
-    };
   }, [geometry, glowAttribute]);
+
+  /*
+   * `instanceGlow` stays on the geometry until this cleanup. WebGLGeometries
+   * frees GPU buffers only for attributes still in `geometry.attributes` when
+   * `dispose` fires; detaching the attribute first would leak that buffer.
+   * The JSX material is released by R3F and is not disposed here.
+   */
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
 
   /**
    * Publish the initial buffer state.

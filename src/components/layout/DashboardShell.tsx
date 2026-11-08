@@ -5,8 +5,10 @@ import { EdgeLogClassifier } from '@/components/EdgeLogClassifier';
 import { ShellLayout } from './ShellLayout';
 import { TopologyViewport } from '@/components/canvas/TopologyViewport';
 import { ChaosControlModal } from '@/components/hud/ChaosControlModal';
+import { PerfTelemetryHUD } from '@/components/hud/PerfTelemetryHUD';
 import { useHudSync } from '@/hooks/useHudSync';
 import { useTelemetryStream } from '@/hooks/useTelemetryStream';
+import { useClusterStore, usePerfHudOpen } from '@/store/useClusterStore';
 
 /**
  * Client entry for the dashboard shell.
@@ -41,11 +43,25 @@ import { useTelemetryStream } from '@/hooks/useTelemetryStream';
 export function DashboardShell({ copilotSlot }: { readonly copilotSlot?: ReactNode }): ReactElement {
   useHudSync();
   useTelemetryStream();
+  const perfHudOpen = usePerfHudOpen();
+  const setPerfHudOpen = useClusterStore((state) => state.setPerfHudOpen);
 
   return (
     <>
       <EdgeLogClassifier />
-      <ShellLayout viewportSlot={<TopologyViewport />} copilotSlot={copilotSlot} />
+      <ShellLayout
+        viewportSlot={<TopologyViewport />}
+        copilotSlot={copilotSlot}
+        perfHudSlot={
+          perfHudOpen ? (
+            <PerfTelemetryHUD
+              onClose={() => {
+                setPerfHudOpen(false);
+              }}
+            />
+          ) : null
+        }
+      />
       {/*
         The chaos drill modal is a SIBLING of the shell, not a child of the
         viewport or the top bar. It is `position: fixed` and needs to cover the

@@ -11,23 +11,29 @@
  * (three `WorkerRack3D` instances on the polar orbit) for the compute racks.
  * Both inherit camera framing, fog and colour grading from here.
  *
- * WHY `frameloop="always"` IS SAFE
- * The canvas renders continuously because the atmosphere (sparkle drift, fog
- * falloff, the upcoming telemetry interpolation) is time-based. `.cursorrules`
- * rule 3 is honoured structurally rather than by dropping frames: nothing inside
- * the R3F tree touches `useState`, and no `useFrame` callback allocates.
+ * WHY `frameloop="always"` IS THE FOREGROUND DEFAULT
+ * The canvas renders continuously while the viewport is visible because the
+ * atmosphere (sparkle drift, fog falloff, telemetry interpolation) is
+ * time-based. `useInViewPause` switches the loop to `"never"` when the tab is
+ * hidden or the cell leaves the viewport, which stops those high-frequency
+ * updates. `.cursorrules` rule 3 still holds: nothing inside the R3F tree
+ * touches `useState`, and no `useFrame` callback allocates. A sustained drop
+ * under 40 FPS lowers `dpr` and the sparkle count from outside the frame.
  *
  * SSR BOUNDARY
  * `'use client'` plus a `next/dynamic({ ssr: false })` import at the mount site
  * (`app/page.tsx`) means `three` never enters the server module graph.
  */
 
-import type { ReactElement } from 'react';
+import { useRef, type ReactElement } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Grid, Sparkles } from '@react-three/drei';
+import { Grid, PerformanceMonitor, Sparkles } from '@react-three/drei';
 import { DoubleSide } from 'three';
-import { noteFrame } from '@/store/useTelemetryRef';
+import { useInViewPause, useRenderBudgetFlags } from '@/hooks/useInViewPause';
+import { noteFrameBudget, requestRenderDegraded } from '@/store/renderBudget';
+import { noteFrame, telemetryTransientRef } from '@/store/useTelemetryRef';
 import { useClusterStore } from '@/store/useClusterStore';
+import { PERF_FPS_LOWER, PERF_FPS_UPPER } from '@/types/perf';
 import CameraRig, { OVERVIEW_CAMERA_POSITION } from './CameraRig';
 import { ErrorRippleField } from './ErrorRippleRing';
 import MasterNode3D from './MasterNode3D';
@@ -187,10 +193,11 @@ function GroundGrid(): ReactElement {
 }
 
 /** Slow cyan dust motes: a depth cue for the empty space around the racks. */
-function VoidSparkles(): ReactElement {
+function VoidSparkles({ count }: { readonly count: number }): ReactElement {
   return (
     <Sparkles
-      count={120}
+      key={count}
+      count={count}
       scale={30}
       size={1.2}
       speed={0.2}
@@ -218,8 +225,13 @@ function VoidSparkles(): ReactElement {
  * reads `telemetryTransientRef.currentFps` in the same frame.
  */
 function FrameClock(): null {
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     noteFrame(delta);
+    noteFrameBudget(
+      telemetryTransientRef.currentFps,
+      telemetryTransientRef.smoothedFrameMs,
+      state.gl.info.render.calls,
+    );
   });
   return null;
 }
@@ -239,13 +251,33 @@ function FrameClock(): null {
  * procedural - no `.glb` assets - and read their live numbers from the transient
  * telemetry pool inside `useFrame`.
  */
-function ClusterScene(): ReactElement {
+function performanceBounds(refreshRate: number): [number, number] {
+  void refreshRate;
+  return [PERF_FPS_LOWER, PERF_FPS_UPPER];
+}
+
+function declineQuality(): void {
+  requestRenderDegraded(true);
+}
+
+function restoreQuality(): void {
+  requestRenderDegraded(false);
+}
+
+function ClusterScene({ sparkleCount }: { readonly sparkleCount: number }): ReactElement {
   return (
-    <>
+    <PerformanceMonitor
+      bounds={performanceBounds}
+      iterations={8}
+      ms={250}
+      threshold={0.75}
+      onDecline={declineQuality}
+      onIncline={restoreQuality}
+    >
       <FrameClock />
       <Atmosphere />
       <GroundGrid />
-      <VoidSparkles />
+      <VoidSparkles count={sparkleCount} />
       <CameraRig />
       <MasterNode3D />
       <WorkerRackField />
@@ -256,7 +288,7 @@ function ClusterScene(): ReactElement {
       {/* Traffic arches last: they are the only element spanning the whole
           cluster, and mounting them after the hardware keeps the intent obvious. */}
       <NetworkStream3D />
-    </>
+    </PerformanceMonitor>
   );
 }
 
@@ -306,40 +338,47 @@ const CANVAS_CAMERA = {
  * the bloom, grid overlay and rounded frame, so the canvas is a pure scene layer.
  */
 export function ClusterCanvas(): ReactElement {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const paused = useInViewPause(viewportRef);
+  const budget = useRenderBudgetFlags();
+
   return (
-    <Canvas
-      dpr={CANVAS_DPR}
-      gl={GL_CONFIG}
-      camera={CANVAS_CAMERA}
-      shadows={false}
-      flat={false}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        touchAction: 'none',
-      }}
-      /* Clicking empty space drops the focus, which flies the camera back to the
-         overview. Registered here rather than per-mesh so a miss on the fog or a
-         grid cell counts too. */
-      onPointerMissed={() => {
-        useClusterStore.getState().clearSelection();
-      }}
-      onCreated={({ gl }) => {
-        /* Transparent clear: the CSS bloom behind the canvas stays visible. */
-        gl.setClearAlpha(0);
-        /*
-         * R3F enables ACES filmic tone mapping by default (`flat={false}`) and
-         * three r155+ uses physical light units. With the fog band the spec
-         * requires (`18 -> 45`) blending ~25% of `void.950` into every surface at
-         * the ~25-unit overview distance, the default exposure renders the racks
-         * as near-black slabs. 1.3 restores the midtones without clipping the
-         * cyan edges; tune here, not by inflating every light intensity.
-         */
-        gl.toneMappingExposure = 1.3;
-      }}
-    >
-      <ClusterScene />
-    </Canvas>
+    <div ref={viewportRef} className="absolute inset-0">
+      <Canvas
+        frameloop={paused ? 'never' : 'always'}
+        dpr={budget.degraded ? 1 : CANVAS_DPR}
+        gl={GL_CONFIG}
+        camera={CANVAS_CAMERA}
+        shadows={false}
+        flat={false}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          touchAction: 'none',
+        }}
+        /* Clicking empty space drops the focus, which flies the camera back to the
+           overview. Registered here rather than per-mesh so a miss on the fog or a
+           grid cell counts too. */
+        onPointerMissed={() => {
+          useClusterStore.getState().clearSelection();
+        }}
+        onCreated={({ gl }) => {
+          /* Transparent clear: the CSS bloom behind the canvas stays visible. */
+          gl.setClearAlpha(0);
+          /*
+           * R3F enables ACES filmic tone mapping by default (`flat={false}`) and
+           * three r155+ uses physical light units. With the fog band the spec
+           * requires (`18 -> 45`) blending ~25% of `void.950` into every surface at
+           * the ~25-unit overview distance, the default exposure renders the racks
+           * as near-black slabs. 1.3 restores the midtones without clipping the
+           * cyan edges; tune here, not by inflating every light intensity.
+           */
+          gl.toneMappingExposure = 1.3;
+        }}
+      >
+        <ClusterScene sparkleCount={budget.sparkleCount} />
+      </Canvas>
+    </div>
   );
 }
 

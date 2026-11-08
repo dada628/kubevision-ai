@@ -111,6 +111,23 @@ export {
 } from './ai';
 
 export type {
+  PerfFrameReading,
+  PerfTelemetryHUDProps,
+  PerfTransport,
+  RenderBudgetFlags,
+} from './perf';
+
+export {
+  INSTANCED_POD_BATCHES,
+  PERF_FPS_HISTORY,
+  PERF_FPS_LOWER,
+  PERF_FPS_UPPER,
+  PERF_TRANSPORTS,
+  SPARKLE_COUNT_DEGRADED,
+  SPARKLE_COUNT_FULL,
+} from './perf';
+
+export type {
   ChaosScenarioMeta,
   ClusterSummary,
   ConnectionMode,

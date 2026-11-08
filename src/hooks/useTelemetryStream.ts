@@ -43,6 +43,7 @@
 
 import { useEffect } from 'react';
 import { useClusterStore } from '@/store/useClusterStore';
+import { noteTelemetryArrival } from '@/store/renderBudget';
 import { getSnapshot, writeSnapshot } from '@/store/useTelemetryRef';
 import {
   SIMULATION_TICK_MS,
@@ -278,10 +279,14 @@ export function useTelemetryStream(): void {
      * summary. Syncing first would publish a summary describing the PREVIOUS
      * frame, so the HUD would be permanently one second behind the 3D scene.
      */
-    const applyFrame = (snapshot: TelemetrySnapshot): void => {
+    const applyFrame = (
+      snapshot: TelemetrySnapshot,
+      transport: 'sse' | 'local',
+    ): void => {
       if (disposed) {
         return;
       }
+      noteTelemetryArrival(snapshot.timestamp, transport);
       writeSnapshot(snapshot);
 
       const lines: string[] = [];
@@ -354,7 +359,7 @@ export function useTelemetryStream(): void {
           return;
         }
         base = stepTelemetrySimulation(base, currentChaos);
-        applyFrame(base);
+        applyFrame(base, 'local');
       };
 
       /* Immediate first tick: waiting a full second would leave the canvas on a
@@ -404,7 +409,7 @@ export function useTelemetryStream(): void {
         if (snapshot === null) {
           return;
         }
-        applyFrame(snapshot);
+        applyFrame(snapshot, 'sse');
       };
 
       source.onerror = () => {
