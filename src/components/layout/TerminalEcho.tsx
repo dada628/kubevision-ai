@@ -15,6 +15,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { PaneSeparator, useFollowPane } from './paneSplit';
 import type { TerminalLogTone } from '@/types/store';
 import {
   parseTerminalLogLine,
@@ -28,6 +29,11 @@ import {
 
 /** Distance from the bottom, in px, still considered "pinned to the tail". */
 const STICK_TO_BOTTOM_THRESHOLD_PX = 24;
+/** Expanded height before the operator drags. Matches the old `h-32`. */
+const TERMINAL_DEFAULT_PX = 128;
+const TERMINAL_MIN_PX = 120;
+const TERMINAL_CANVAS_MIN_PX = 160;
+const TERMINAL_HEIGHT_KEY = 'kv-terminal-echo-height';
 
 /**
  * Tone -> text colour.
@@ -62,10 +68,9 @@ const TONE_BADGE: Record<TerminalLogTone, string> = {
  * 左侧 3D 视口底部的极客事件流终端。
  *
  * Behaviour:
- * - Expanded: `h-32`, collapsible to an `h-8` status strip via the header or the
- *   chevron control. Collapsed state lives in the store so the shell can keep
- *   the 3D viewport sized correctly (the viewport grows by 96px when the
- *   terminal folds away).
+ * - Expanded: a pixel height (default 128) dragged from the top edge. Collapsed
+ *   to an `h-8` status strip via the header or the chevron. The drag grip is
+ *   absent while folded, and the last height returns on expand.
  * - Auto-scroll: sticks to the newest line, but ONLY while the operator is
  *   already at the bottom. If they scroll up to read history, new lines do not
  *   yank the viewport back - the standard log-viewer contract.
@@ -84,11 +89,42 @@ export function TerminalEcho(): ReactElement {
   const clearLogs = useClusterStore((state) => state.clearTerminalLogs);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const stickToBottomRef = useRef<boolean>(true);
+  const [columnHeight, setColumnHeight] = useState(0);
   /* Mirror of `stickToBottomRef` for the header label. The ref is the source of
      truth for the scroll effect (it must not trigger a render on every scroll
      event); this state exists only so the "tail / scroll-lock" badge updates. */
   const [isPinned, setIsPinned] = useState<boolean>(true);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    const column = section?.parentElement;
+    if (column === null || column === undefined) {
+      return;
+    }
+    const measure = (): void => {
+      setColumnHeight(column.clientHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(column);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const maxHeight = columnHeight === 0
+    ? 480
+    : Math.max(TERMINAL_MIN_PX, columnHeight - TERMINAL_CANVAS_MIN_PX);
+  const heightPane = useFollowPane({
+    storageKey: TERMINAL_HEIGHT_KEY,
+    axis: 'y',
+    edge: 'end',
+    min: TERMINAL_MIN_PX,
+    max: maxHeight,
+    defaultSize: TERMINAL_DEFAULT_PX,
+  });
 
   /**
    * Parses each line once per string identity.
@@ -117,7 +153,9 @@ export function TerminalEcho(): ReactElement {
     setIsPinned((previous) => (previous === pinned ? previous : pinned));
   }, []);
 
-  /* Auto-scroll on every append, but only when pinned to the tail. */
+  /* Auto-scroll on every append, but only when pinned to the tail.
+     Resizing the terminal uses the same rule: a reader parked mid-log keeps
+     their scrollTop, and a reader already on the tail stays on the tail. */
   useEffect(() => {
     if (collapsed) {
       return;
@@ -127,7 +165,7 @@ export function TerminalEcho(): ReactElement {
       return;
     }
     node.scrollTop = node.scrollHeight;
-  }, [terminalLogs, collapsed]);
+  }, [terminalLogs, collapsed, heightPane.size]);
 
   /* `noUncheckedIndexedAccess` types index access as possibly-undefined even
      when the length check guarantees a hit, hence the `?? null` fallback. */
@@ -136,12 +174,14 @@ export function TerminalEcho(): ReactElement {
 
   return (
     <section
-      className={cn(
-        'pointer-events-auto flex shrink-0 flex-col overflow-hidden border-t border-slate-800/80 bg-slate-950/85 backdrop-blur-md transition-[height] duration-200 ease-out',
-        collapsed ? 'h-8' : 'h-32',
-      )}
+      ref={sectionRef}
+      className="pointer-events-auto flex shrink-0 flex-col overflow-hidden border-t border-slate-800/80 bg-slate-950/85 backdrop-blur-md"
+      style={{ height: collapsed ? 32 : heightPane.size }}
       aria-label="Cluster event stream"
     >
+      {collapsed ? null : (
+        <PaneSeparator {...heightPane.separatorProps} label="拖动调整终端高度" />
+      )}
       {/* ------------------------------ header ------------------------------ */}
       <button
         type="button"

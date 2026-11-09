@@ -8,7 +8,7 @@
  * locally. The cloud copilot receives the worker's sanitized line.
  */
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { Eye, EyeOff, ShieldAlert, Timer } from 'lucide-react';
 import { useClusterStore } from '@/store/useClusterStore';
 import {
@@ -24,8 +24,13 @@ import {
   type EdgeAuditCard,
   type EdgeAuditorSnapshot,
 } from '@/workers/edgeClassifierChannel';
+import { PANE_HANDLE_PX, PaneSeparator, useFollowPane } from '@/components/layout/paneSplit';
 
 const AUTO_AUDIT_INTERVAL_MS = 4_000;
+const AUDITOR_CHROME_DEFAULT_PX = 248;
+const AUDITOR_CHROME_MIN_PX = 120;
+const AUDITOR_LIST_MIN_PX = 120;
+const AUDITOR_CHROME_KEY = 'kv-auditor-chrome-height';
 
 const BADGE_CLASS: Record<EdgeAuditLabel, string> = {
   CRITICAL_PANIC: 'border-rose-500/70 bg-rose-500/15 text-rose-100',
@@ -348,11 +353,42 @@ export function LocalAuditorPanel({ onOpenCopilot }: LocalAuditorPanelProps): Re
     onOpenCopilot();
   };
 
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [splitHeight, setSplitHeight] = useState(0);
+  useEffect(() => {
+    const split = splitRef.current;
+    if (split === null) {
+      return;
+    }
+    const measure = (): void => {
+      setSplitHeight(split.clientHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(split);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+  const chromeMax = splitHeight === 0
+    ? 420
+    : Math.max(AUDITOR_CHROME_MIN_PX, splitHeight - PANE_HANDLE_PX - AUDITOR_LIST_MIN_PX);
+  const chrome = useFollowPane({
+    storageKey: AUDITOR_CHROME_KEY,
+    axis: 'y',
+    edge: 'start',
+    min: AUDITOR_CHROME_MIN_PX,
+    max: chromeMax,
+    defaultSize: AUDITOR_CHROME_DEFAULT_PX,
+  });
+
   return (
-    <section className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden" aria-label="Edge Log Auditor">
+    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-label="Edge Log Auditor">
+      <div ref={splitRef} className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 space-y-2 overflow-y-auto overscroll-contain" style={{ height: chrome.size }}>
       <StatusCard view={view} />
 
-      <div className="flex shrink-0 flex-col gap-2">
+      <div className="flex flex-col gap-2">
         <button
           type="button"
           onClick={() => {
@@ -384,6 +420,9 @@ export function LocalAuditorPanel({ onOpenCopilot }: LocalAuditorPanelProps): Re
           {view.lastNotice !== null ? ` · ${view.lastNotice}` : ''}
         </p>
       </div>
+      </div>
+
+      <PaneSeparator {...chrome.separatorProps} label="拖动调整审计列表高度" />
 
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
         {view.pending.map((item) => (
@@ -413,6 +452,7 @@ export function LocalAuditorPanel({ onOpenCopilot }: LocalAuditorPanelProps): Re
             尚未审计。抓取当前集群容器日志后，端侧分类和脱敏结果会显示在这里。
           </p>
         ) : null}
+      </div>
       </div>
     </section>
   );
